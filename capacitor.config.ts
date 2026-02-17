@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'io.kiit.anti',
+  appId: 'com.skilllinkr.app',
   appName: 'SkillLinkr',
   webDir: 'out',
 

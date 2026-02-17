@@ -49,3 +49,9 @@ debug_team.js
 supabase-manual-users.sql
 supabase-verify-email.sql
 
+
+# Security
+google-services.json
+service-account.json
+*.pem
+.env*
