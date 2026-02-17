@@ -20,28 +20,9 @@ export function ForgotPasswordForm() {
         setError("")
 
         try {
-            // 1. Check if user exists in public profiles
-            // We use the 'files' table or 'profiles' table. In this app, users are in 'profiles' with id = email if using custom auth, or id = uuid if using Supabase Auth.
-            // Since we migrated to Supabase Auth, the profile ID might be the UUID, but we store the email in the 'email' column (if it exists) or mapping.
-            // Wait, for Supabase native auth, the `profiles.id` is the UUID. 
-            // However, we can query profiles by `email` column if we added it, OR we can try to find a way to check.
-            // The trigger added `email` to the profiles table: 
-            // insert into public.profiles (..., email, ...) values (..., new.email, ...);
-
-            const { data: profile, error: profileError } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('email', email) // Assuming email column exists and is indexed/accessible
-                .single()
-
-            if (profileError || !profile) {
-                // Determine if it's a "not found" error or something else
-                if (profileError?.code === 'PGRST116' || !profile) { // PGRST116 is "Row not found"
-                    throw new Error("User does not exist. Please Sign up first.")
-                }
-                // If it's another error (like permission denied), we might still want to proceed or warn.
-                // But for now, let's assume if we can't find them, they don't exist.
-            }
+            // 1. Supabase handles "user not found" security by sending a fake success message (to prevent enumeration)
+            // or we can let it fail silently.
+            // But for a better UX, we just proceed to send the email.
 
             // 2. Send Reset Email
             const { error } = await supabase.auth.resetPasswordForEmail(email, {

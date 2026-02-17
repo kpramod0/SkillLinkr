@@ -21,15 +21,7 @@ export const metadata: Metadata = {
   // 2. The description used for SEO and social sharing previews
   description: "Connect with SkillLinkr students",
 
-  // 3. The Favicon / Website Icon configuration
-  icons: {
-    icon: [
-      {
-        url: "/logo.png", // Path to your image file in the 'public' folder
-        type: "image/png", // MIME type of the image
-      },
-    ],
-  },
+
 };
 
 export default function RootLayout({
