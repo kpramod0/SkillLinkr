@@ -1,0 +1,55 @@
+name: unimatch
+description: A Tinder-like Flutter app for Peerzaa students to connect and collaborate
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Firebase
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  cloud_firestore: ^4.13.6
+  firebase_storage: ^11.5.6
+  firebase_messaging: ^14.7.9
+  cloud_functions: ^4.5.9
+  
+  # Google Sign In
+  google_sign_in: ^6.1.6
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # UI Components
+  cupertino_icons: ^1.0.2
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.0
+  image_picker: ^1.0.5
+  
+  # Utilities
+  intl: ^0.18.1
+  uuid: ^4.2.1
+  shared_preferences: ^2.2.2
+  
+  # Swipe Cards
+  flutter_card_swiper: ^6.0.0
+  
+  # Animations
+  animations: ^2.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/icons/
+    - assets/images/
+    - assets/logo/

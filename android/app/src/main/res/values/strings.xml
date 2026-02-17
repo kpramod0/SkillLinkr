@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SkillLinkr</string>
+    <string name="title_activity_main">SkillLinkr</string>
+    <string name="package_name">io.kiit.anti</string>
+    <string name="custom_url_scheme">io.kiit.anti</string>
+</resources>

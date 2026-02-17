@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local Logs & Temp Files
+*.log
+*-log.txt
+server_log.txt
+otp-store.json
+debug_team.js
+supabase-manual-users.sql
+supabase-verify-email.sql
+

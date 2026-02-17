@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isKIITEmail() {
+      return isAuthenticated() && request.auth.token.email.matches('.*@kiit[.]ac[.]in$');
+    }
+    
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Anyone can read user profiles
+      allow read: if isKIITEmail();
+      
+      // Only the owner can create/update their own profile
+      allow create: if isKIITEmail() && isOwner(userId);
+      allow update: if isKIITEmail() && isOwner(userId);
+      
+      // No one can delete users
+      allow delete: if false;
+    }
+    
+    // Swipe actions (private to each user)
+    match /swipes/{userId}/actions/{targetUid} {
+      allow read, write: if isKIITEmail() && isOwner(userId);
+    }
+    
+    // Requests collection
+    match /requests/{requestId} {
+      // Users can read requests they sent or received
+      allow read: if isKIITEmail() && (
+        resource.data.fromUid == request.auth.uid ||
+        resource.data.toUid == request.auth.uid
+      );
+      
+      // Users can create requests (sending)
+      allow create: if isKIITEmail() && request.resource.data.fromUid == request.auth.uid;
+      
+      // Only the receiver can update the request (accept/reject)
+      allow update: if isKIITEmail() && resource.data.toUid == request.auth.uid;
+      
+      // No deletion
+      allow delete: if false;
+    }
+    
+    // Matches collection
+    match /matches/{matchId} {
+      // Users can read matches they're part of
+      allow read: if isKIITEmail() && request.auth.uid in resource.data.users;
+      
+      // Only server (Cloud Functions) can create matches
+      allow create: if false;
+      
+      // No updates or deletions
+      allow update, delete: if false;
+    }
+    
+    // Chat messages
+    match /chats/{matchId}/messages/{messageId} {
+      // Users can read messages from matches they're part of
+      allow read: if isKIITEmail() && exists(/databases/$(database)/documents/matches/$(matchId)) &&
+                     request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users;
+      
+      // Users can send messages to matches they're part of
+      allow create: if isKIITEmail() &&
+                       exists(/databases/$(database)/documents/matches/$(matchId)) &&
+                       request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users &&
+                       request.resource.data.senderId == request.auth.uid;
+      
+      // No updates or deletions
+      allow update, delete: if false;
+    }
+    
+    // Notifications (private to each user)
+    match /notifications/{userId}/items/{notificationId} {
+      allow read: if isKIITEmail() && isOwner(userId);
+      
+      // Allow server to create notifications
+      allow create: if isKIITEmail();
+      
+      // Users can update their own notifications (mark as read)
+      allow update: if isKIITEmail() && isOwner(userId);
+      
+      // Users can delete their own notifications
+      allow delete: if isKIITEmail() && isOwner(userId);
+    }
+  }
+}

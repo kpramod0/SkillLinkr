@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "495700825990",
+    "project_id": "collexa-aa05b",
+    "storage_bucket": "collexa-aa05b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:495700825990:android:e64a7b5781f6b956d2fe07",
+        "android_client_info": {
+          "package_name": "io.kiit.anti"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkuBhEmtbY6_mBDf71tg0E3qFmXZn7S-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
