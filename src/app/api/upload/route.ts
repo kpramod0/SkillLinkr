@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 const BUCKET = 'uploads';
 
 // Ensure storage bucket exists (creates once, idempotent)
 async function ensureBucket() {
-    const { data: buckets } = await supabase.storage.listBuckets();
+    const { data: buckets } = await getSupabase().storage.listBuckets();
     if (!buckets?.find(b => b.name === BUCKET)) {
-        await supabase.storage.createBucket(BUCKET, {
+        await getSupabase().storage.createBucket(BUCKET, {
             public: true,
             fileSizeLimit: 5 * 1024 * 1024, // 5MB
         });
@@ -42,7 +45,7 @@ export async function POST(request: Request) {
         const buffer = Buffer.from(await file.arrayBuffer());
 
         // Upload to Supabase Storage
-        const { data, error } = await supabase.storage
+        const { data, error } = await getSupabase().storage
             .from(BUCKET)
             .upload(filePath, buffer, {
                 contentType: file.type,
@@ -55,7 +58,7 @@ export async function POST(request: Request) {
         }
 
         // Get the public URL
-        const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
+        const { data: urlData } = getSupabase().storage.from(BUCKET).getPublicUrl(filePath);
         const publicUrl = urlData.publicUrl;
 
         // If userId provided, add to profile photos array
@@ -103,12 +106,12 @@ export async function DELETE(request: Request) {
         const filePath = urlParts[1];
 
         if (filePath) {
-            await supabase.storage.from(BUCKET).remove([filePath]);
+            await getSupabase().storage.from(BUCKET).remove([filePath]);
         }
 
         // Remove from profile photos array if userId provided
         if (userId) {
-            const { data: profile } = await supabase
+            const { data: profile } = await getSupabase()
                 .from('profiles')
                 .select('photos')
                 .eq('id', userId)
@@ -116,7 +119,7 @@ export async function DELETE(request: Request) {
 
             if (profile?.photos) {
                 const updatedPhotos = profile.photos.filter((p: string) => p !== photoUrl);
-                await supabase
+                await getSupabase()
                     .from('profiles')
                     .update({ photos: updatedPhotos })
                     .eq('id', userId);

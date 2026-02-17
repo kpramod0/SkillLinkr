@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Helper to get Supabase client
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 // Helper to check admin status
 async function isTeamAdmin(teamId: string, userId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
         .from('team_members')
         .select('role')
         .eq('team_id', teamId)
@@ -26,7 +30,7 @@ export async function GET(
     try {
         const teamId = (await params).id;
 
-        const { data: team, error } = await supabase
+        const { data: team, error } = await getSupabase()
             .from('teams')
             .select(`
                 *,
@@ -71,7 +75,7 @@ export async function PUT(
     }
 
     // Update
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
         .from('teams')
         .update({
             title,

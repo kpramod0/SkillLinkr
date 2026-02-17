@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Helper to get Supabase client
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 export const dynamic = 'force-dynamic'; // Ensure fresh data
 
@@ -13,7 +17,7 @@ export async function GET() {
         // Fetch all profiles with their professional details
         // Note: For a very large app, we would use a dedicated 'skills' table or an RPC function.
         // For MVP with <1000 users, js processing is fine.
-        const { data: profiles, error } = await supabase
+        const { data: profiles, error } = await getSupabase()
             .from('profiles')
             .select('professionalDetails');
 
