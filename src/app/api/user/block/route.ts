@@ -2,9 +2,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 // GET /api/user/block?userId=...
 export async function GET(req: Request) {
@@ -13,7 +15,7 @@ export async function GET(req: Request) {
 
     if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
 
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
         .from('blocked_users')
         .select('blocked_id')
         .eq('blocker_id', userId);
@@ -31,7 +33,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing IDs' }, { status: 400 });
         }
 
-        const { error } = await supabase
+        const { error } = await getSupabase()
             .from('blocked_users')
             .insert({ blocker_id: blockerId, blocked_id: blockedId });
 

@@ -2,10 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 // Lightweight auth client for JWT validation
-const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
+function getSupabaseAuth() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    if (!supabaseUrl || !supabaseAnonKey) throw new Error('Missing Supabase credentials');
+    return createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
+}
 
 /**
  * Validates the request's Bearer token and returns the user's email.
@@ -14,7 +17,7 @@ async function requireAuthEmail(req: Request): Promise<string | null> {
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) return null;
-    const { data, error } = await supabaseAuth.auth.getUser(token);
+    const { data, error } = await getSupabaseAuth().auth.getUser(token);
     if (error || !data?.user?.email) return null;
     return data.user.email;
 }

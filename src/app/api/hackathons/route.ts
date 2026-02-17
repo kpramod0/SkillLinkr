@@ -2,12 +2,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Helper to get Supabase client
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 export async function GET(req: Request) {
     try {
+        const supabase = getSupabase();
         // Fetch from Supabase
         const { data: hackathons, error } = await supabase
             .from('hackathons')

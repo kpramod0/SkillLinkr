@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Helper to get Supabase client
+function getSupabaseClient() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    if (!supabaseUrl || !supabaseKey) {
+        throw new Error('Missing Supabase credentials');
+    }
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 // Helper
 async function isTeamAdmin(teamId: string, userId: string): Promise<boolean> {
+    const supabase = getSupabaseClient();
     const { data } = await supabase
         .from('team_members')
         .select('role')
@@ -23,6 +30,7 @@ export async function GET(
     const teamId = (await params).id;
 
     try {
+        const supabase = getSupabaseClient();
         // Step 1: Fetch pending applications from team_applications table
         const { data: applications, error: appsError } = await supabase
             .from('team_applications')
@@ -97,6 +105,7 @@ export async function POST(
     }
 
     try {
+        const supabase = getSupabaseClient();
         if (action === 'accept') {
             // 1. Update application status
             const { error: appError } = await supabase

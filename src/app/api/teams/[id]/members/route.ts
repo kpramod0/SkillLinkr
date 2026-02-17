@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Helper to get Supabase client
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
+    return createClient(supabaseUrl, supabaseKey);
+}
 
 // Helper to check if user is admin
 async function isTeamAdmin(teamId: string, userId: string): Promise<boolean> {
-    const { data } = await supabase
+    const { data } = await getSupabase()
         .from('team_members')
         .select('role')
         .eq('team_id', teamId)
@@ -25,7 +29,7 @@ export async function GET(
 
     try {
         // Step 1: Fetch raw member records
-        const { data: members, error: membersError } = await supabase
+        const { data: members, error: membersError } = await getSupabase()
             .from('team_members')
             .select('role, joined_at, user_id')
             .eq('team_id', teamId);
@@ -41,7 +45,7 @@ export async function GET(
 
         // Step 2: Fetch profiles for all member user_ids
         const userIds = members.map(m => m.user_id);
-        const { data: profiles, error: profilesError } = await supabase
+        const { data: profiles, error: profilesError } = await getSupabase()
             .from('profiles')
             .select('id, first_name, last_name, photos, bio')
             .in('id', userIds);
@@ -99,7 +103,8 @@ export async function PUT(
     }
 
     // Perform update
-    const { error } = await supabase
+    // Perform update
+    const { error } = await getSupabase()
         .from('team_members')
         .update({ role: newRole })
         .eq('team_id', teamId)
@@ -132,7 +137,7 @@ export async function DELETE(
 
     // If leaving, check if last admin? (Optional safety)
 
-    const { error } = await supabase
+    const { error } = await getSupabase()
         .from('team_members')
         .delete()
         .eq('team_id', teamId)
