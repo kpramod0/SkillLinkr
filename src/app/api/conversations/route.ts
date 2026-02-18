@@ -57,7 +57,7 @@ export async function GET(req: Request) {
 
         let profiles: any[] = [];
         if (friendIds.length > 0) {
-            const { data: profs, error: profErr } = await supabaseAdmin.from('profiles').select('*').in('id', friendIds);
+            const { data: profs, error: profErr } = await db.from('profiles').select('*').in('id', friendIds);
             if (profErr) throw profErr;
             profiles = profs || [];
         }
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
                 if (!friend) return null;
 
                 // unread count (DM only)
-                const { count } = await supabaseAdmin
+                const { count } = await db
                     .from('messages')
                     .select('*', { count: 'exact', head: true })
                     .eq('receiver_id', userId)
@@ -93,7 +93,7 @@ export async function GET(req: Request) {
         const validDirect = directConversations.filter(Boolean) as any[];
 
         // 2) Teams where user is member
-        const { data: teamMembers, error: tmErr } = await supabaseAdmin
+        const { data: teamMembers, error: tmErr } = await db
             .from('team_members')
             .select('team_id')
             .eq('user_id', userId);
@@ -104,7 +104,7 @@ export async function GET(req: Request) {
         const teamIds = (teamMembers || []).map((t: any) => t.team_id);
 
         if (teamIds.length > 0) {
-            const { data: teams, error: teamsErr } = await supabaseAdmin.from('teams').select('*').in('id', teamIds);
+            const { data: teams, error: teamsErr } = await db.from('teams').select('*').in('id', teamIds);
             if (teamsErr) throw teamsErr;
 
             teamConversations = (teams || []).map((team: any) => ({
