@@ -98,6 +98,10 @@ export async function GET(req: Request) {
         // select db client (userClient preferred)
         const db = userClient || supabaseAdmin;
 
+        if (!db || typeof db.from !== 'function') {
+            return NextResponse.json({ error: 'Service Unavailable: Database client failed' }, { status: 503 });
+        }
+
         // --- Authorization Checks ---
         // 1. Team Chat: Must be a member
         if (teamId) {
@@ -191,6 +195,10 @@ export async function POST(req: Request) {
 
         // select db client
         const db = userClient || supabaseAdmin;
+
+        if (!db || typeof db.from !== 'function') {
+            return NextResponse.json({ error: 'Service Unavailable: Database client failed' }, { status: 503 });
+        }
 
         // --- Authorization Checks ---
         const actingUser = authEmail || senderId;

@@ -43,6 +43,11 @@ export async function GET(req: Request) {
     // In that case, we MUST use supabaseAdmin (and hope it works) OR fail.
     const db = userClient || supabaseAdmin;
 
+    if (!db || typeof db.from !== 'function') {
+        console.error('Critical Error: No valid Supabase client available for user:', userId);
+        return NextResponse.json({ error: 'Service Unavailable: Database client failed' }, { status: 503 });
+    }
+
     try {
         // 1) Matches
         const { data: matches, error: matchErr } = await db
