@@ -13,21 +13,31 @@ function getSupabaseAuth() {
 /**
  * Validates the request's Bearer token and returns the user's email.
  */
-async function requireAuthEmail(req: Request): Promise<string | null> {
+async function requireAuthEmail(req: Request) {
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return null;
-    const { data, error } = await getSupabaseAuth().auth.getUser(token);
-    if (error || !data?.user?.email) return null;
-    return data.user.email;
+
+    if (!token) return { email: null, supabase: null };
+
+    // Create client with user's token (Respects RLS)
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user?.email) return { email: null, supabase };
+
+    return { email: data.user.email, supabase };
 }
 
 /**
  * Checks if a user is a member of the specified team using Admin client.
  * Essential for enforcing access control on group chats.
  */
-async function isTeamMember(teamId: string, userId: string) {
-    const { data, error } = await supabaseAdmin
+async function isTeamMember(teamId: string, userId: string, client: any) {
+    const { data, error } = await client
         .from('team_members')
         .select('team_id')
         .eq('team_id', teamId)
@@ -41,8 +51,8 @@ async function isTeamMember(teamId: string, userId: string) {
  * Checks if two users have a confirmed match.
  * Essential for enforcing access control on Direct Messages.
  */
-async function hasMatch(userId: string, targetId: string) {
-    const { data, error } = await supabaseAdmin
+async function hasMatch(userId: string, targetId: string, client: any) {
+    const { data, error } = await client
         .from('matches')
         .select('id')
         .or(`and(user1_id.eq.${userId},user2_id.eq.${targetId}),and(user1_id.eq.${targetId},user2_id.eq.${userId})`)
@@ -60,7 +70,7 @@ async function hasMatch(userId: string, targetId: string) {
  * - For DMs: Users must have a confirmed 'match' record.
  */
 export async function GET(req: Request) {
-    const authEmail = await requireAuthEmail(req);
+    const { email: authEmail, supabase: userClient } = await requireAuthEmail(req);
     // Custom Auth Support: If no JWT, trust userId param (matches POST behavior)
     // if (!authEmail) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -85,20 +95,23 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Missing targetId or teamId' }, { status: 400 });
         }
 
+        // select db client (userClient preferred)
+        const db = userClient || supabaseAdmin;
+
         // --- Authorization Checks ---
         // 1. Team Chat: Must be a member
         if (teamId) {
-            const ok = await isTeamMember(teamId, actingUser);
+            const ok = await isTeamMember(teamId, actingUser, db);
             if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         // 2. Direct Message: Must be a match
         else if (targetId) {
-            const ok = await hasMatch(actingUser, targetId);
+            const ok = await hasMatch(actingUser, targetId, db);
             if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         // --- Fetch Messages ---
-        let query = supabaseAdmin.from('messages').select('*').order('timestamp', { ascending: true });
+        let query = db.from('messages').select('*').order('timestamp', { ascending: true });
 
         if (teamId) {
             query = query.eq('team_id', teamId);
@@ -114,20 +127,20 @@ export async function GET(req: Request) {
 
         // --- Enrich with Sender Profiles ---
         // Efficiently fetch profiles for all unique senders in this batch
-        const senderIds = [...new Set((messages || []).map((m) => m.sender_id).filter(Boolean))];
+        const senderIds = [...new Set((messages || []).map((m: any) => m.sender_id).filter(Boolean))];
 
         const profileMap = new Map<string, any>();
         if (senderIds.length > 0) {
-            const { data: profiles } = await supabaseAdmin
+            const { data: profiles } = await db
                 .from('profiles')
                 .select('id, first_name, last_name, photos')
                 .in('id', senderIds);
 
-            (profiles || []).forEach((p) => profileMap.set(p.id, p));
+            (profiles || []).forEach((p: any) => profileMap.set(p.id, p));
         }
 
         // Attach profile data to each message object
-        const messagesWithSender = (messages || []).map((msg) => {
+        const messagesWithSender = (messages || []).map((msg: any) => {
             const sender = profileMap.get(msg.sender_id);
             return {
                 ...msg,
@@ -154,7 +167,7 @@ export async function GET(req: Request) {
  * 3. Updating conversation metadata (last_message, last_message_at)
  */
 export async function POST(req: Request) {
-    const authEmail = await requireAuthEmail(req);
+    const { email: authEmail, supabase: userClient } = await requireAuthEmail(req);
     // Custom Auth Support: If no JWT, trust senderId from body
     // if (!authEmail) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -176,16 +189,19 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing receiverId or teamId' }, { status: 400 });
         }
 
+        // select db client
+        const db = userClient || supabaseAdmin;
+
         // --- Authorization Checks ---
         const actingUser = authEmail || senderId;
         // 1. Group Chat: Sender must be a member
         if (teamId) {
-            const ok = await isTeamMember(String(teamId), actingUser);
+            const ok = await isTeamMember(String(teamId), actingUser, db);
             if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         // 2. Direct Message: Sender must match with receiver
         else if (receiverId) {
-            const ok = await hasMatch(actingUser, receiverId);
+            const ok = await hasMatch(actingUser, receiverId, db);
             if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -217,7 +233,7 @@ export async function POST(req: Request) {
         }
 
         // --- Persist Message ---
-        const { error: msgError } = await supabaseAdmin.from('messages').insert(messageData);
+        const { error: msgError } = await db.from('messages').insert(messageData);
         if (msgError) throw msgError;
 
         const nowIso = new Date().toISOString();
@@ -225,12 +241,12 @@ export async function POST(req: Request) {
         // --- Update Conversation Metadata ---
         // Updates `last_message` and `last_message_at` so the chat moves to the top
         if (teamId) {
-            await supabaseAdmin
+            await db
                 .from('teams')
                 .update({ last_message: resolvedContent, last_message_at: nowIso })
                 .eq('id', teamId);
         } else {
-            await supabaseAdmin
+            await db
                 .from('matches')
                 .update({ last_message: resolvedContent, last_message_at: nowIso })
                 .or(`and(user1_id.eq.${senderId},user2_id.eq.${receiverId}),and(user1_id.eq.${receiverId},user2_id.eq.${senderId})`);

@@ -8,17 +8,26 @@ function getSupabaseAuth() {
     return createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
 }
 
-async function requireAuthEmail(req: Request): Promise<string | null> {
+async function requireAuthEmail(req: Request) {
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return null;
-    const { data, error } = await getSupabaseAuth().auth.getUser(token);
-    if (error || !data?.user?.email) return null;
-    return data.user.email;
+
+    if (!token) return { email: null, supabase: null };
+
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user?.email) return { email: null, supabase };
+
+    return { email: data.user.email, supabase };
 }
 
 export async function GET(req: Request) {
-    const authEmail = await requireAuthEmail(req);
+    const { email: authEmail, supabase: userClient } = await requireAuthEmail(req);
     // Relaxed Auth: Allow query param if no JWT
     // if (!authEmail) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -28,9 +37,15 @@ export async function GET(req: Request) {
 
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    // Use userClient if available (preferred for RLS), otherwise fallback to Admin (if exists)
+    // But since we suspect Admin is broken in prod, we really want userClient.
+    // However, if we authenticated via userIdParam (no token), userClient is null/anon.
+    // In that case, we MUST use supabaseAdmin (and hope it works) OR fail.
+    const db = userClient || supabaseAdmin;
+
     try {
         // 1) Matches
-        const { data: matches, error: matchErr } = await supabaseAdmin
+        const { data: matches, error: matchErr } = await db
             .from('matches')
             .select('*')
             .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
@@ -38,7 +53,7 @@ export async function GET(req: Request) {
 
         if (matchErr) throw matchErr;
 
-        const friendIds = (matches || []).map((m) => (m.user1_id === userId ? m.user2_id : m.user1_id));
+        const friendIds = (matches || []).map((m: any) => (m.user1_id === userId ? m.user2_id : m.user1_id));
 
         let profiles: any[] = [];
         if (friendIds.length > 0) {
@@ -48,9 +63,9 @@ export async function GET(req: Request) {
         }
 
         const directConversations = await Promise.all(
-            (matches || []).map(async (match) => {
+            (matches || []).map(async (match: any) => {
                 const friendId = match.user1_id === userId ? match.user2_id : match.user1_id;
-                const friend = profiles.find((p) => p.id === friendId);
+                const friend = profiles.find((p: any) => p.id === friendId);
                 if (!friend) return null;
 
                 // unread count (DM only)
@@ -86,13 +101,13 @@ export async function GET(req: Request) {
         if (tmErr) throw tmErr;
 
         let teamConversations: any[] = [];
-        const teamIds = (teamMembers || []).map((t) => t.team_id);
+        const teamIds = (teamMembers || []).map((t: any) => t.team_id);
 
         if (teamIds.length > 0) {
             const { data: teams, error: teamsErr } = await supabaseAdmin.from('teams').select('*').in('id', teamIds);
             if (teamsErr) throw teamsErr;
 
-            teamConversations = (teams || []).map((team) => ({
+            teamConversations = (teams || []).map((team: any) => ({
                 id: `team_${team.id}`,
                 dbId: team.id,
                 type: 'group',
@@ -106,7 +121,7 @@ export async function GET(req: Request) {
         }
 
         // Merge + sort by lastMessageAt
-        const all = [...validDirect, ...teamConversations].sort((a, b) => {
+        const all = [...validDirect, ...teamConversations].sort((a: any, b: any) => {
             const timeA = new Date(a.lastMessageAt || 0).getTime();
             const timeB = new Date(b.lastMessageAt || 0).getTime();
             return timeB - timeA;
