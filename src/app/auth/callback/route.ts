@@ -1,45 +1,54 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { type NextRequest, NextResponse } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr"
+import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
-    const { searchParams, origin } = new URL(request.url);
-    const code = searchParams.get("code");
+    const { searchParams, origin } = new URL(request.url)
+    const code = searchParams.get("code")
     // if "next" is in param, use it as the redirect URL
-    const next = searchParams.get("next") ?? "/";
+    const next = searchParams.get("next") ?? "/"
 
     if (code) {
-        const cookieStore = request.cookies;
+        const cookieStore = request.cookies
+
+        // Create the response object first so we can modify its cookies
+        const response = NextResponse.redirect(`${origin}${next}`)
+
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
             {
                 cookies: {
                     get(name: string) {
-                        return cookieStore.get(name)?.value;
+                        return cookieStore.get(name)?.value
                     },
                     set(name: string, value: string, options: CookieOptions) {
-                        // Note: This is a route handler, so we can't set cookies directly on the request object.
-                        // But we need to pass these options to the response.
-                        // The supabase-ssr package handles the response modification typically via middleware or by returning a response.
-                        // IN THIS CASE: We just need to exchange code for session.
+                        // Updated: correctly set cookies on the response object
+                        response.cookies.set({
+                            name,
+                            value,
+                            ...options,
+                        })
                     },
                     remove(name: string, options: CookieOptions) {
+                        // Updated: correctly remove cookies from the response object
+                        response.cookies.set({
+                            name,
+                            value: "",
+                            ...options,
+                        })
                     },
                 },
             }
-        );
+        )
 
-        // Exchange the code for a session
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
 
         if (!error) {
-            // FORGOT PASSWORD FLOW: 
-            // When user clicks "Reset Password", the code logs them in.
-            // We then redirect them to the "Update Password" page.
-            return NextResponse.redirect(`${origin}${next}`);
+            // Return the response which now has the session cookies set
+            return response
         }
     }
 
     // Return the user to an error page with instructions
-    return NextResponse.redirect(`${origin}/auth/auth-code-error`);
+    return NextResponse.redirect(`${origin}/auth/auth-code-error`)
 }
