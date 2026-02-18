@@ -7,8 +7,13 @@ export async function GET(request: NextRequest) {
     // if "next" is in param, use it as the redirect URL
     const next = searchParams.get("next") ?? "/"
 
+    console.log("Auth Callback Hit")
+    console.log("Code Present:", !!code)
+    console.log("Target Next URL:", next)
+
     if (code) {
         const cookieStore = request.cookies
+        // ... (existing cookie setup)
 
         // Create the response object first so we can modify its cookies
         const response = NextResponse.redirect(`${origin}${next}`)
@@ -43,7 +48,13 @@ export async function GET(request: NextRequest) {
 
         const { error } = await supabase.auth.exchangeCodeForSession(code)
 
+        if (error) {
+            console.error("Auth Exchange Error:", error.message)
+            return NextResponse.redirect(`${origin}/login?error=auth_exchange_failed`)
+        }
+
         if (!error) {
+            console.log("Auth Success! Redirecting to:", `${origin}${next}`)
             // Return the response which now has the session cookies set
             return response
         }

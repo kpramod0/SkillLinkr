@@ -1,5 +1,5 @@
--- Trigger to create a profile entry when a new user signs up via Supabase Auth
--- REVISED: Uses new.email as ID to match legacy schema and handles duplicates.
+-- Trigger to create a profile entry ONLY when a user is verified
+-- REVISED: Handles both "Created Verified" AND "Verified Later" scenarios.
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -7,24 +7,28 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, first_name, last_name, role, email, onboarding_completed)
-  values (
-    new.email, -- IMPORTANT: Use Email as ID to match legacy architecture
-    'New', 
-    'User', 
-    coalesce(new.raw_user_meta_data->>'role', 'student'),
-    new.email,
-    false
-  )
-  ON CONFLICT (id) DO NOTHING; -- If profile exists (legacy user), do nothing (adopt it).
+  -- Only create profile if email is confirmed
+  if new.email_confirmed_at is not null then
+      insert into public.profiles (id, first_name, last_name, role, email, onboarding_completed)
+      values (
+        new.email, -- Use Email as ID
+        'New', 
+        'User', 
+        coalesce(new.raw_user_meta_data->>'role', 'student'),
+        new.email, -- Store email
+        false
+      )
+      ON CONFLICT (id) DO NOTHING; -- If profile exists, do nothing.
+  end if;
   
   return new;
 end;
 $$;
 
--- Ensure trigger is set
+-- Drop old trigger
 drop trigger if exists on_auth_user_created on auth.users;
 
+-- Create new trigger that fires on INSERT (if created verified) and UPDATE (when verification happens)
 create trigger on_auth_user_created
-  after insert on auth.users
+  after insert or update on auth.users
   for each row execute procedure public.handle_new_user();

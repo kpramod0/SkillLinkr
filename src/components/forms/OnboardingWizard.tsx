@@ -167,19 +167,19 @@ export function OnboardingWizard({ email }: WizardProps) {
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
                                     placeholder="First Name"
-                                    value={formData.personal?.firstName}
+                                    value={formData.personal?.firstName || ""}
                                     onChange={e => handlePersonalChange('firstName', e.target.value)}
                                 />
                                 <Input
                                     placeholder="Last Name"
-                                    value={formData.personal?.lastName}
+                                    value={formData.personal?.lastName || ""}
                                     onChange={e => handlePersonalChange('lastName', e.target.value)}
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <select
                                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                                    value={formData.personal?.gender}
+                                    value={formData.personal?.gender || "Other"}
                                     onChange={e => handlePersonalChange('gender', e.target.value)}
                                 >
                                     <option value="Male">Male</option>
@@ -189,13 +189,13 @@ export function OnboardingWizard({ email }: WizardProps) {
                                 <Input
                                     type="number"
                                     placeholder="Age"
-                                    value={formData.personal?.age}
+                                    value={formData.personal?.age || ""}
                                     onChange={e => handlePersonalChange('age', parseInt(e.target.value))}
                                 />
                             </div>
                             <select
                                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                                value={formData.personal?.year}
+                                value={formData.personal?.year || "1st"}
                                 onChange={e => handlePersonalChange('year', e.target.value)}
                             >
                                 <option value="1st">1st Year</option>

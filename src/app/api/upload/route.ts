@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         // If userId provided, add to profile photos array
         let photos: string[] = [];
         if (userId) {
-            const { data: profile } = await supabase
+            const { data: profile } = await getSupabase()
                 .from('profiles')
                 .select('photos')
                 .eq('id', userId)
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
             photos = profile?.photos || [];
             photos.push(publicUrl);
 
-            await supabase
+            await getSupabase()
                 .from('profiles')
                 .update({ photos })
                 .eq('id', userId);
