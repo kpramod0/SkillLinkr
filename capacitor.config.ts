@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     // Determine the URL based on environment
     // For Production Build:
     url: 'https://skilllinkr.com',
-    cleartext: true,
+    cleartext: true
   }
 };
 

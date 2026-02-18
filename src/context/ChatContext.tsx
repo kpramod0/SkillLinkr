@@ -395,17 +395,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
     }, [userId])
 
-    // 2. Subscribe to Team Membership Changes
-    // Ensures that when I get added to a team, the team chat appears instantly
+    // 2. Subscribe to Team Membership Changes AND New Matches (DMs)
+    // Ensures that when I get added to a team OR get a new match, the chat appears instantly
     useEffect(() => {
         if (!userId) return
 
         if (teamMemberRef.current) supabase.removeChannel(teamMemberRef.current)
 
+        // A. Team Membership
         teamMemberRef.current = supabase
             .channel(`team_members_${userId}`)
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "team_members", filter: `user_id=eq.${userId}` }, () => {
-                // Refresh list on new membership
+                fetchConversations(userId)
+            })
+            // B. New Matches (where I am user1)
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "matches", filter: `user1_id=eq.${userId}` }, () => {
+                fetchConversations(userId)
+            })
+            // C. New Matches (where I am user2)
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "matches", filter: `user2_id=eq.${userId}` }, () => {
                 fetchConversations(userId)
             })
             .subscribe()

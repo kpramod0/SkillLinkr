@@ -66,7 +66,8 @@ export function SwipeDeck() {
             setLoading(true)
             try {
                 const email = localStorage.getItem("user_email")
-                const res = await fetch('/api/profiles')
+                const url = email ? `/api/profiles?userId=${encodeURIComponent(email)}` : '/api/profiles'
+                const res = await fetch(url)
                 if (!res.ok) throw new Error('Failed to fetch profiles')
                 const data: UserProfile[] = await res.json()
 

@@ -44,7 +44,7 @@ export async function GET(req: Request) {
 
         // Build a set of matched user IDs for lookup
         const matchedPairs = new Set<string>();
-        (matches || []).forEach(m => {
+        (matches || []).forEach((m: any) => {
             const otherId = m.user1_id === userId ? m.user2_id : m.user1_id;
             matchedPairs.add(otherId);
         });

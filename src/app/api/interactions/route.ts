@@ -48,6 +48,15 @@ export async function POST(req: Request) {
                 .from('swipes')
                 .upsert({ swiper_id: userId, target_id: targetId, action: 'pass' }, { onConflict: 'swiper_id,target_id' });
 
+            // If we are passing (rejecting) someone who liked us, we MUST delete their like
+            // so they can potentially show up again (or at least we acknowledge the rejection processed)
+            // This satisfies: "If He Reject my Request then he again start appearing in my Discover"
+            await supabase
+                .from('swipes')
+                .delete()
+                .eq('swiper_id', targetId)
+                .eq('target_id', userId);
+
             if (error) {
                 console.error('Pass error:', error);
                 return NextResponse.json({ error: 'Failed to pass' }, { status: 500 });
@@ -96,6 +105,7 @@ export async function POST(req: Request) {
                             user1_id: userId,
                             user2_id: targetId,
                             created_at: new Date().toISOString(),
+                            last_message: 'You Matched! 🎉',
                             last_message_at: new Date().toISOString()
                         });
 
