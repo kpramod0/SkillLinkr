@@ -27,10 +27,12 @@ export async function GET(request: Request) {
 
             // 2. Get all Swipes (Unidirectional: Likes, Passes, Stars)
             // If I already swiped on them, I shouldn't see them again
+            // UPDATE: User wants 'passed' profiles to reappear. So only exclude if action is NOT 'pass' (e.g. 'like', 'superlike')
             const { data: swipes } = await supabase
                 .from('swipes')
                 .select('target_id')
-                .eq('swiper_id', userId);
+                .eq('swiper_id', userId)
+                .neq('action', 'pass');
 
             const excludedIds = new Set<string>();
             excludedIds.add(userId); // Exclude self
