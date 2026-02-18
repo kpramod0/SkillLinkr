@@ -45,6 +45,19 @@ export function SignupForm() {
         }
 
         try {
+            // Check if user already exists
+            const { data: existingUser } = await supabase
+                .from("profiles")
+                .select("id")
+                .eq("email", email)
+                .single()
+
+            if (existingUser) {
+                setError("User already registered. Please login.")
+                setIsLoading(false)
+                return
+            }
+
             // Use Supabase Native Auth
             const { data, error } = await supabase.auth.signUp({
                 email,

@@ -76,11 +76,11 @@ export function VerifyForm() {
                         <KeyRound className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input
                             type="text"
-                            placeholder="Enter 6-digit code"
+                            placeholder="Enter code"
                             className="pl-9 bg-white border-gray-200 dark:bg-white/5 dark:border-white/10 text-center tracking-widest text-lg"
                             value={otp}
                             onChange={(e) => setOtp(e.target.value)}
-                            maxLength={6}
+                            maxLength={8}
                             required
                         />
                     </div>
