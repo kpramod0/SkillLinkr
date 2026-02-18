@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { User, Code2, Camera, Heart, ChevronRight, ChevronLeft, Check } from "lucide-react"
+import { User, Code2, Camera, Heart, ChevronRight, ChevronLeft, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -30,6 +30,7 @@ export function OnboardingWizard({ email }: WizardProps) {
     const [currentStep, setCurrentStep] = useState(1)
     const [isLoading, setIsLoading] = useState(false)
     const [uploadingPhoto, setUploadingPhoto] = useState(false)
+    const [validationError, setValidationError] = useState("")
 
     // Fetch existing profile if modifying
     useEffect(() => {
@@ -39,11 +40,13 @@ export function OnboardingWizard({ email }: WizardProps) {
                 const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`)
                 if (res.ok) {
                     const data = await res.json()
-                    // If profile exists, merge it into state
                     if (data && data.personal) {
+                        // FIX: Detect "New User" default and clear it
+                        if (data.personal.firstName === 'New' && data.personal.lastName === 'User') {
+                            data.personal.firstName = "";
+                            data.personal.lastName = "";
+                        }
                         setFormData(data)
-                        // If we are editing (onboardingCompleted is true), we might want to start at step 1 but allowing flexible navigation
-                        // For now, let's just prefill.
                     }
                 }
             } catch (e) {
@@ -53,18 +56,20 @@ export function OnboardingWizard({ email }: WizardProps) {
         fetchProfile()
     }, [email])
 
-    // Form State
+    // Form State - Adjusted to match UserProfile type (professionalDetails)
     const [formData, setFormData] = useState<Partial<UserProfile>>({
         personal: {
             firstName: "",
             lastName: "",
-            gender: "Other",
+            gender: undefined as any,
             age: 18,
-            year: "1st",
         },
-        professional: {
+        professionalDetails: {
+            year: "1st", // Correctly placed here
             domains: [],
             languages: [],
+            skills: [],
+            openTo: []
         },
         visuals: {
             photos: [],
@@ -72,6 +77,7 @@ export function OnboardingWizard({ email }: WizardProps) {
         },
         preferences: {
             interestedIn: [],
+            interestedDomains: []
         },
     })
 
@@ -82,19 +88,23 @@ export function OnboardingWizard({ email }: WizardProps) {
         setFormData(prev => ({ ...prev, personal: { ...prev.personal!, [field]: value } }))
     }
 
+    const handleProfessionalChange = (field: string, value: any) => {
+        setFormData(prev => ({ ...prev, professionalDetails: { ...prev.professionalDetails!, [field]: value } }))
+    }
+
     const toggleDomain = (domain: Domain) => {
-        const current = formData.professional?.domains || []
+        const current = formData.professionalDetails?.domains || []
         const updated = current.includes(domain)
             ? current.filter(d => d !== domain)
             : [...current, domain]
-        setFormData(prev => ({ ...prev, professional: { ...prev.professional!, domains: updated } }))
+        setFormData(prev => ({ ...prev, professionalDetails: { ...prev.professionalDetails!, domains: updated } }))
     }
 
     const addLanguage = () => {
         if (!languageInput.trim()) return
-        const current = formData.professional?.languages || []
+        const current = formData.professionalDetails?.languages || []
         if (!current.includes(languageInput.trim())) {
-            setFormData(prev => ({ ...prev, professional: { ...prev.professional!, languages: [...current, languageInput.trim()] } }))
+            setFormData(prev => ({ ...prev, professionalDetails: { ...prev.professionalDetails!, languages: [...current, languageInput.trim()] } }))
         }
         setLanguageInput("")
     }
@@ -107,7 +117,32 @@ export function OnboardingWizard({ email }: WizardProps) {
         setFormData(prev => ({ ...prev, preferences: { ...prev.preferences!, interestedIn: updated } }))
     }
 
+    const validateStep = (step: number): boolean => {
+        setValidationError("");
+
+        if (step === 1) {
+            if (!formData.personal?.firstName?.trim()) {
+                setValidationError("First Name is required");
+                return false;
+            }
+            // Last Name is now Optional
+
+            if (!formData.personal?.gender) {
+                setValidationError("Gender is required");
+                return false;
+            }
+
+            if (!formData.professionalDetails?.year) {
+                setValidationError("Year of study is required");
+                return false;
+            }
+        }
+        return true;
+    }
+
     const handleSubmit = async () => {
+        if (!validateStep(currentStep)) return;
+
         setIsLoading(true)
         try {
             const res = await fetch('/api/profile', {
@@ -121,15 +156,16 @@ export function OnboardingWizard({ email }: WizardProps) {
             router.push('/main/discover')
         } catch (error) {
             console.error(error)
-            // Show error handling UI technically
         } finally {
             setIsLoading(false)
         }
     }
 
     const nextStep = () => {
-        if (currentStep < 4) setCurrentStep(c => c + 1)
-        else handleSubmit()
+        if (validateStep(currentStep)) {
+            if (currentStep < 4) setCurrentStep(c => c + 1)
+            else handleSubmit()
+        }
     }
 
     return (
@@ -166,22 +202,37 @@ export function OnboardingWizard({ email }: WizardProps) {
                             <h2 className="text-2xl font-bold">Tell us about yourself</h2>
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
-                                    placeholder="First Name"
+                                    placeholder="Enter First Name"
                                     value={formData.personal?.firstName || ""}
-                                    onChange={e => handlePersonalChange('firstName', e.target.value)}
+                                    onChange={e => {
+                                        setValidationError("")
+                                        handlePersonalChange('firstName', e.target.value)
+                                    }}
+                                    className={validationError && !formData.personal?.firstName ? "border-red-500" : ""}
                                 />
                                 <Input
-                                    placeholder="Last Name"
+                                    placeholder="Enter Last Name"
                                     value={formData.personal?.lastName || ""}
-                                    onChange={e => handlePersonalChange('lastName', e.target.value)}
+                                    onChange={e => {
+                                        setValidationError("")
+                                        handlePersonalChange('lastName', e.target.value)
+                                    }}
+                                    className={validationError && !formData.personal?.lastName ? "border-red-500" : ""}
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                                    value={formData.personal?.gender || "Other"}
-                                    onChange={e => handlePersonalChange('gender', e.target.value)}
+                                    className={cn(
+                                        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
+                                        validationError && !formData.personal?.gender ? "border-red-500" : ""
+                                    )}
+                                    value={formData.personal?.gender || ""}
+                                    onChange={e => {
+                                        setValidationError("")
+                                        handlePersonalChange('gender', e.target.value)
+                                    }}
                                 >
+                                    <option value="" disabled>Select Gender</option>
                                     <option value="Male">Male</option>
                                     <option value="Female">Female</option>
                                     <option value="Other">Other</option>
@@ -193,17 +244,27 @@ export function OnboardingWizard({ email }: WizardProps) {
                                     onChange={e => handlePersonalChange('age', parseInt(e.target.value))}
                                 />
                             </div>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                                value={formData.personal?.year || "1st"}
-                                onChange={e => handlePersonalChange('year', e.target.value)}
-                            >
-                                <option value="1st">1st Year</option>
-                                <option value="2nd">2nd Year</option>
-                                <option value="3rd">3rd Year</option>
-                                <option value="4th">4th Year</option>
-                                <option value="Graduated">Graduated / Alumni</option>
-                            </select>
+                            <div className="space-y-1">
+                                <label className="text-xs text-muted-foreground ml-1">Year of Study *</label>
+                                <select
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                                    value={formData.professionalDetails?.year || "1st"}
+                                    onChange={e => handleProfessionalChange('year', e.target.value)}
+                                >
+                                    <option value="1st">1st Year</option>
+                                    <option value="2nd">2nd Year</option>
+                                    <option value="3rd">3rd Year</option>
+                                    <option value="4th">4th Year</option>
+                                    <option value="Graduated">Graduated / Alumni</option>
+                                </select>
+                            </div>
+
+                            {validationError && (
+                                <div className="flex items-center gap-2 text-red-500 text-sm bg-red-500/10 p-3 rounded-lg">
+                                    <AlertCircle className="h-4 w-4" />
+                                    {validationError}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -221,7 +282,7 @@ export function OnboardingWizard({ email }: WizardProps) {
                                             onClick={() => toggleDomain(domain)}
                                             className={cn(
                                                 "px-3 py-1.5 rounded-full text-sm border transition-all",
-                                                formData.professional?.domains?.includes(domain)
+                                                formData.professionalDetails?.domains?.includes(domain)
                                                     ? "bg-primary text-primary-foreground border-primary"
                                                     : "border-input hover:bg-muted"
                                             )}
@@ -244,7 +305,7 @@ export function OnboardingWizard({ email }: WizardProps) {
                                     <Button type="button" onClick={addLanguage} variant="outline">Add</Button>
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-2">
-                                    {formData.professional?.languages?.map(lang => (
+                                    {formData.professionalDetails?.languages?.map(lang => (
                                         <span key={lang} className="bg-muted px-2 py-1 rounded text-sm flex items-center gap-1">
                                             {lang}
                                         </span>
@@ -293,7 +354,6 @@ export function OnboardingWizard({ email }: WizardProps) {
                                                         if (!file) return;
                                                         setUploadingPhoto(true);
                                                         try {
-                                                            // Delete old photo first
                                                             const oldUrl = formData.visuals?.photos?.[0];
                                                             if (oldUrl) {
                                                                 await fetch('/api/upload', {
@@ -302,7 +362,6 @@ export function OnboardingWizard({ email }: WizardProps) {
                                                                     body: JSON.stringify({ userId: email, photoUrl: oldUrl })
                                                                 });
                                                             }
-                                                            // Compress & upload new
                                                             const compressed = await compressImage(file);
                                                             const fd = new FormData();
                                                             fd.append('file', compressed);
