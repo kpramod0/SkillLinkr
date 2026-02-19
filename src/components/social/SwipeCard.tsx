@@ -92,9 +92,15 @@ export function SwipeCard({ profile, onSwipe, onClick, style, exitDirection }: S
                                     <span className="text-sm font-normal bg-white/20 px-2 py-0.5 rounded-full">
                                         {profile.professionalDetails.year} Yr
                                     </span>
+                                    {profile.personal.branch && (
+                                        <span className="text-sm font-normal bg-emerald-500/30 text-emerald-200 px-2 py-0.5 rounded-full">
+                                            {profile.personal.branch}
+                                        </span>
+                                    )}
                                 </h2>
                                 <p className="text-white/80 font-medium">
                                     {profile.professionalDetails.domains[0]} • {profile.professionalDetails.year} Yr
+                                    {profile.personal.branch ? ` • ${profile.personal.branch}` : ''}
                                 </p>
                             </div>
                         </div>

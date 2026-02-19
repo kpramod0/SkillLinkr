@@ -45,6 +45,7 @@ export type UserProfile = {
         lastName: string;
         gender: 'Male' | 'Female' | 'Other';
         age: number;
+        branch?: string; // e.g. CS, CSE, IT, ECE, etc.
     };
     professionalDetails: ProfessionalDetails;
     visuals: {

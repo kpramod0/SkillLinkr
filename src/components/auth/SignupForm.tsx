@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { Mail, Lock, ArrowRight, Eye, EyeOff, GraduationCap, Briefcase } from "lucide-react"
+import { Mail, Lock, ArrowRight, Eye, EyeOff, GraduationCap, Briefcase, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -16,6 +16,7 @@ export function SignupForm() {
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [role, setRole] = useState<"student" | "faculty" | "">("")
+    const [branch, setBranch] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState("")
     const [devOtp, setDevOtp] = useState("")
@@ -44,6 +45,12 @@ export function SignupForm() {
             return
         }
 
+        if (role === 'student' && !branch.trim()) {
+            setError("Please enter your branch/department.")
+            setIsLoading(false)
+            return
+        }
+
         try {
             // Check if user already exists
             const { data: existingUser } = await supabase
@@ -65,6 +72,7 @@ export function SignupForm() {
                 options: {
                     data: {
                         role: role, // Stored in raw_user_meta_data
+                        branch: role === 'student' ? branch.trim() : null,
                     },
                 },
             })
@@ -128,6 +136,29 @@ export function SignupForm() {
                         </button>
                     </div>
                 </div>
+
+                {/* Branch — only for students, required */}
+                {role === 'student' && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="space-y-2"
+                    >
+                        <div className="relative">
+                            <BookOpen className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                type="text"
+                                placeholder="Branch / Department (e.g. CSE, IT, ECE)"
+                                className="pl-9 bg-white border-gray-200 dark:bg-white/5 dark:border-white/10"
+                                value={branch}
+                                onChange={(e) => setBranch(e.target.value)}
+                                required
+                            />
+                        </div>
+                    </motion.div>
+                )}
 
                 <div className="space-y-2">
                     <div className="relative">

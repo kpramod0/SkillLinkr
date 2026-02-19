@@ -63,6 +63,7 @@ export function rowToProfile(row: any): UserProfile {
             lastName: row.last_name,
             gender: row.gender,
             age: row.age,
+            branch: row.branch || undefined,
         },
         professionalDetails: {
             year: row.year,
@@ -103,6 +104,7 @@ export function profileToRow(profile: UserProfile) {
         last_name: profile.personal.lastName,
         gender: profile.personal.gender,
         age: profile.personal.age,
+        branch: profile.personal.branch || null,
 
         // Professional Details
         year: profile.professionalDetails.year,

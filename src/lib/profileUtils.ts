@@ -12,6 +12,7 @@ export function mapRowToProfile(row: any): UserProfile {
             lastName: row.last_name,
             gender: row.gender || 'Other',
             age: row.age || 0,
+            branch: row.branch || undefined,
         },
         professionalDetails: {
             year: row.year || '1st',

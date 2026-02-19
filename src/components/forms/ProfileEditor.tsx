@@ -433,6 +433,14 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
                                 ))}
                             </div>
                         </div>
+                        <div>
+                            <label className="text-xs text-muted-foreground uppercase font-bold mb-1 block">Branch / Department</label>
+                            <Input
+                                placeholder="e.g. CSE, IT, ECE, Mechanical..."
+                                value={formData.personal?.branch || ''}
+                                onChange={e => handlePersonalChange('branch', e.target.value)}
+                            />
+                        </div>
                     </>
                 ) : (
                     // --- View Mode: Personal ---
@@ -448,6 +456,10 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
                         <div>
                             <span className="text-muted-foreground block text-xs uppercase">Year</span>
                             <span className="font-semibold">{formData.professionalDetails?.year}</span>
+                        </div>
+                        <div>
+                            <span className="text-muted-foreground block text-xs uppercase">Branch</span>
+                            <span className="font-semibold">{formData.personal?.branch || <span className="text-muted-foreground italic text-sm">Not set</span>}</span>
                         </div>
                     </div>
                 )}
