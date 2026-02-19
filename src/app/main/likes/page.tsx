@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { UserProfile } from "@/types";
 import { Heart, Bell, UserCheck, Send, PartyPopper, Check, X, MessageCircle } from "lucide-react";
 import { ProfileDetailModal } from "@/components/social/ProfileDetailModal";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRealtime } from "@/context/RealtimeContext";
+import { useAuth } from "@/context/AuthContext";
 
 type Activity = {
     id: string;
@@ -18,46 +20,55 @@ type Activity = {
 };
 
 export default function LikesPage() {
+    const { userId } = useAuth();
+    const { onNewLike, onNewMatch } = useRealtime();
     const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
     const [selectedMessage, setSelectedMessage] = useState<{ name: string, message: string } | null>(null);
     const [likedByUsers, setLikedByUsers] = useState<UserProfile[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const email = localStorage.getItem("user_email");
-                if (!email) return;
-
-                const [likesRes, activityRes] = await Promise.all([
-                    fetch(`/api/likes?userId=${email}`),
-                    fetch(`/api/activity?userId=${email}`)
-                ]);
-
-                if (likesRes.ok) {
-                    const likesData = await likesRes.json();
-                    setLikedByUsers(likesData);
-                }
-                if (activityRes.ok) {
-                    setActivities(await activityRes.json());
-                }
-            } catch (error) {
-                console.error("Failed to fetch data:", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchData();
+    const fetchData = useCallback(async (uid: string) => {
+        try {
+            const [likesRes, activityRes] = await Promise.all([
+                fetch(`/api/likes?userId=${uid}`),
+                fetch(`/api/activity?userId=${uid}`)
+            ]);
+            if (likesRes.ok) setLikedByUsers(await likesRes.json());
+            if (activityRes.ok) setActivities(await activityRes.json());
+        } catch (error) {
+            console.error("Failed to fetch data:", error);
+        } finally {
+            setIsLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        if (userId) fetchData(userId);
+    }, [userId, fetchData]);
+
+    // Real-time: instant update when someone likes you
+    useEffect(() => {
+        if (!userId) return;
+        const unsubLike = onNewLike(() => {
+            // Refresh likes list to show the new person
+            fetchData(userId);
+        });
+        const unsubMatch = onNewMatch(() => {
+            // Refresh activity feed to show the new match
+            fetchData(userId);
+        });
+        return () => { unsubLike(); unsubMatch(); };
+    }, [userId, onNewLike, onNewMatch, fetchData]);
+
+
 
     const handleAction = async (targetUser: UserProfile, action: 'like' | 'pass') => {
         setLikedByUsers(prev => prev.filter(u => u.id !== targetUser.id));
 
         try {
-            const email = localStorage.getItem("user_email");
-            if (!email) return;
+            if (!userId) return;
+            const email = userId;
 
             // Handle Team Application
             if ((targetUser as any).isTeamApplication) {

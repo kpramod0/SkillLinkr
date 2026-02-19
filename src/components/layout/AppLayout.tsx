@@ -9,66 +9,28 @@ import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 import { MatchRequestsSidebar } from "@/components/social/MatchRequestsSidebar";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { useRealtime } from "@/context/RealtimeContext";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const isChatOpen = pathname === '/main/chat' && !!searchParams.get('chatId');
     const { theme, toggleTheme } = useTheme();
-    const [counts, setCounts] = useState({ likes: 0, chats: 0, requests: 0 });
+    const { badges, clearLikesBadge, clearChatsBadge } = useRealtime();
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
-    // Mark pages as "seen"
+    // Clear badge when user visits the page
     useEffect(() => {
-        if (pathname.startsWith('/main/likes')) {
-            localStorage.setItem('likes_last_seen', new Date().toISOString());
-        }
-        if (pathname.startsWith('/main/chats')) {
-            localStorage.setItem('chats_last_seen', new Date().toISOString());
-        }
-    }, [pathname]);
-
-    // Fetch badge counts
-    const fetchCounts = useCallback(async () => {
-        try {
-            const email = localStorage.getItem("user_email");
-            if (!email) return;
-
-            const likesSeen = localStorage.getItem('likes_last_seen') || '';
-            const chatsSeen = localStorage.getItem('chats_last_seen') || '';
-
-            const params = new URLSearchParams({ userId: email });
-            if (likesSeen) params.set('likesSeen', likesSeen);
-            if (chatsSeen) params.set('chatsSeen', chatsSeen);
-
-            const res = await fetch(`/api/counts?${params.toString()}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (pathname.startsWith('/main/likes')) data.likes = 0;
-                if (pathname.startsWith('/main/chats')) data.chats = 0;
-                setCounts(data);
-            }
-        } catch (error) {
-            // Silently fail for background updates to avoid console spam
-            // console.warn("Failed to fetch counts");
-        }
-    }, [pathname]);
-
-
-    useEffect(() => {
-        fetchCounts();
-        const interval = setInterval(() => {
-            fetchCounts();
-        }, 30000);
-        return () => clearInterval(interval);
-    }, [fetchCounts]);
+        if (pathname.startsWith('/main/likes')) clearLikesBadge();
+        if (pathname.startsWith('/main/chats') || pathname.startsWith('/main/chat')) clearChatsBadge();
+    }, [pathname, clearLikesBadge, clearChatsBadge]);
 
 
     const navItems = [
         { href: "/main/people", icon: Users, label: "People", count: 0 },
         { href: "/main/discover", icon: Flame, label: "Discover", count: 0 },
-        { href: "/main/likes", icon: Heart, label: "Likes", count: counts.likes },
-        { href: "/main/chat", icon: MessageSquare, label: "Messages", count: counts.chats },
+        { href: "/main/likes", icon: Heart, label: "Likes", count: badges.likes },
+        { href: "/main/chat", icon: MessageSquare, label: "Messages", count: badges.chats },
         { href: "/main/leaderboard", icon: Trophy, label: "Rank", count: 0 },
         { href: "/main/profile", icon: UserIcon, label: "Profile", count: 0 },
     ];
