@@ -44,10 +44,11 @@ async function enrichTeams(teams: any[]): Promise<any[]> {
         .select('team_id')
         .in('team_id', teamIds);
 
-    // Count per team
+    // Count per team — stringify IDs to avoid integer vs string key mismatch
     const countMap = new Map<string, number>();
     (memberCounts || []).forEach((row: any) => {
-        countMap.set(row.team_id, (countMap.get(row.team_id) || 0) + 1);
+        const key = String(row.team_id);
+        countMap.set(key, (countMap.get(key) || 0) + 1);
     });
 
     return teams.map((team) => {
@@ -55,9 +56,9 @@ async function enrichTeams(teams: any[]): Promise<any[]> {
         return {
             ...team,
             creator: cp ? { ...cp, short_bio: cp.bio } : null,
-            member_count: countMap.get(team.id) || 0,
+            member_count: countMap.get(String(team.id)) || 0,
             // Keep members array shape for backward compat but use count
-            members: Array(countMap.get(team.id) || 0).fill({}),
+            members: Array(countMap.get(String(team.id)) || 0).fill({}),
         };
     });
 }
