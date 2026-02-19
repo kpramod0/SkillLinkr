@@ -71,6 +71,15 @@ export default function TeamDashboard() {
         skills_required: ""
     })
 
+    // Helper to get auth headers with Bearer token
+    const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+        const { data } = await supabase.auth.getSession()
+        const token = data.session?.access_token
+        return token
+            ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+            : { 'Content-Type': 'application/json' }
+    }, [])
+
     // Fetch Data
     const fetchData = useCallback(async () => {
         if (!teamId) return
@@ -93,8 +102,9 @@ export default function TeamDashboard() {
             setUserId(currentUserId)
 
             // 1. Fetch Team Details
+            const authHeaders = await getAuthHeaders()
             const resTeam = await fetch(`/api/teams/${teamId}`, {
-                headers: { 'Content-Type': 'application/json' }
+                headers: authHeaders
             })
             if (!resTeam.ok) throw new Error(`Failed to fetch team: ${resTeam.status}`)
             const teamData = await resTeam.json()
@@ -112,7 +122,7 @@ export default function TeamDashboard() {
 
             // 2. Fetch Members
             const resMembers = await fetch(`/api/teams/${teamId}/members`, {
-                headers: { 'Content-Type': 'application/json' }
+                headers: authHeaders
             })
             let membersData: TeamMember[] = []
             if (resMembers.ok) {
@@ -139,7 +149,7 @@ export default function TeamDashboard() {
             // 3. Fetch Applications (If Admin/Creator)
             if (hasAdminRole || isCreator) {
                 const resApps = await fetch(`/api/teams/${teamId}/applications`, {
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: authHeaders
                 })
                 if (resApps.ok) setApplications(await resApps.json())
             }
