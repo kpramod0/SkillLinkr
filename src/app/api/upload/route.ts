@@ -87,14 +87,35 @@ export async function POST(request: Request) {
             const gallery = existingPhotos.slice(1, 4); // keep non-avatar photos
             const updatedPhotos = [publicUrl, ...gallery];
 
-            const { error: updateError } = await sb
+            const { data: updatedRows, error: updateError } = await sb
                 .from('profiles')
                 .update({ photos: updatedPhotos })
-                .eq('id', userId);   // profiles.id = email
+                .eq('id', userId)   // profiles.id = email
+                .select();
 
             if (updateError) {
                 console.error('[upload] DB update error:', updateError);
-                // Still return the URL so client can display it even if DB save failed
+                // Return error to client so they know persistence failed
+                return NextResponse.json({ error: 'Database update failed: ' + updateError.message }, { status: 500 });
+            } else if (!updatedRows || updatedRows.length === 0) {
+                // Row missing! The auth trigger likely failed.
+                // Fallback: Create the profile row now.
+                console.warn('[upload] Profile row missing for', userId, '— creating fallback row.');
+
+                const { error: insertError } = await sb
+                    .from('profiles')
+                    .insert({
+                        id: userId,
+                        photos: updatedPhotos,
+                        // Set minimal defaults
+                        role: 'student',
+                        onboarding_completed: false
+                    });
+
+                if (insertError) {
+                    console.error('[upload] Fallback insert failed:', insertError);
+                    return NextResponse.json({ error: 'Profile creation failed: ' + insertError.message }, { status: 500 });
+                }
             } else {
                 console.log('[upload] Saved photos to profile:', userId);
             }
