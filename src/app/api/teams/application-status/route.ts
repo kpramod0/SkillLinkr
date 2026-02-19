@@ -59,11 +59,38 @@ export async function POST(req: Request) {
         const team = Array.isArray(app.teams) ? app.teams[0] : app.teams;
         if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 });
 
-        // Authorization: only team owner can approve/reject
+        // Authorization: acting user must be either the team creator OR have admin role in team_members
         const actingUser = authEmail || userId;
-        if (team.creator_id !== actingUser) {
-            console.log(`[AppStatus] Unauthorized: creator ${team.creator_id} !== actor ${actingUser}`);
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+        if (!actingUser) {
+            return NextResponse.json({ error: 'Unauthorized: No user identity provided' }, { status: 401 });
+        }
+
+        // Check 1: Is actingUser the creator?
+        const isCreator = team.creator_id === actingUser;
+
+        // Check 2: Does actingUser have admin role in team_members?
+        let isTeamAdmin = false;
+        if (!isCreator) {
+            const { data: memberRow } = await supabaseAdmin
+                .from('team_members')
+                .select('role')
+                .eq('team_id', app.team_id)
+                .eq('user_id', actingUser)
+                .maybeSingle();
+            isTeamAdmin = !!(memberRow && ['admin', 'Leader', 'creator'].includes(memberRow.role));
+        }
+
+        if (!isCreator && !isTeamAdmin) {
+            console.log(`[AppStatus] Unauthorized: creator=${team.creator_id}, actingUser=${actingUser}, isCreator=${isCreator}, isTeamAdmin=${isTeamAdmin}`);
+            return NextResponse.json({ error: 'Unauthorized: You are not an admin of this team' }, { status: 403 });
+        }
+
+        // Auto-repair: ensure creator is in team_members as admin if they're not already
+        if (isCreator) {
+            await supabaseAdmin.from('team_members').upsert(
+                { team_id: app.team_id, user_id: actingUser, role: 'admin' },
+                { onConflict: 'team_id,user_id' }
+            );
         }
 
         const teamTitle = team.title || 'the team';
@@ -160,19 +187,21 @@ export async function POST(req: Request) {
             });
 
             // Notify owner (optional but useful)
-            await supabaseAdmin.from('notifications').insert({
-                user_id: authEmail,
-                type: 'system',
-                title: 'New Team Member 🚀',
-                message: `${applicantName} joined "${teamTitle}".`,
-                data: {
-                    teamId: app.team_id,
-                    teamTitle,
-                    applicationId,
-                    applicantId: app.applicant_id,
-                    status: 'accepted',
-                },
-            });
+            if (actingUser) {
+                await supabaseAdmin.from('notifications').insert({
+                    user_id: actingUser,
+                    type: 'system',
+                    title: 'New Team Member 🚀',
+                    message: `${applicantName} joined "${teamTitle}".`,
+                    data: {
+                        teamId: app.team_id,
+                        teamTitle,
+                        applicationId,
+                        applicantId: app.applicant_id,
+                        status: 'accepted',
+                    },
+                });
+            }
 
             return NextResponse.json({ success: true, status: 'accepted' });
         }

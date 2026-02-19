@@ -73,15 +73,32 @@ export default function LikesPage() {
             // Handle Team Application
             if ((targetUser as any).isTeamApplication) {
                 const teamAction = action === 'like' ? 'approve' : 'reject';
-                await fetch('/api/teams/application-status', {
+
+                // Get auth token for the application-status route (requires Bearer token to verify ownership)
+                const { createClient } = await import('@supabase/supabase-js');
+                const _supabase = createClient(
+                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+                );
+                const { data: { session } } = await _supabase.auth.getSession();
+                const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+                if (session?.access_token) {
+                    authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+                }
+
+                const appRes = await fetch('/api/teams/application-status', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders,
                     body: JSON.stringify({
                         userId: email,
                         applicationId: (targetUser as any).applicationId,
                         action: teamAction
                     })
                 });
+                if (!appRes.ok) {
+                    const errData = await appRes.json().catch(() => ({}));
+                    console.error('[Likes] Team application action failed:', errData);
+                }
 
                 // Add local activity for immediate feedback
                 const newActivity: Activity = {
@@ -98,6 +115,7 @@ export default function LikesPage() {
                 setActivities(prev => [newActivity, ...prev]);
                 return;
             }
+
 
             // Handle Profile Like
             const res = await fetch('/api/interactions', {

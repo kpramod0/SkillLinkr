@@ -298,17 +298,32 @@ export default function TeamDashboard() {
     const handleApplication = async (action: 'accept' | 'reject', applicantId: string, applicationId: string) => {
         if (!userId) return
         try {
-            const res = await fetch(`/api/teams/${teamId}/applications`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, applicationId, action, targetUserId: applicantId })
-            })
-            if (!res.ok) throw new Error(`Failed to ${action}`)
+            // Use the application-status route which authorizes via bearer token + application ownership
+            // This avoids the isTeamAdmin check which can fail due to email/UUID format mismatches
+            const headers = await getAuthHeaders()
+            const apiAction = action === 'accept' ? 'approve' : 'reject'
 
-            toast({ title: action === 'accept' ? "Welcome!" : "Rejected", description: `Application ${action}ed`, variant: action === 'accept' ? 'success' : 'default' })
+            const res = await fetch(`/api/teams/application-status`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ userId, applicationId, action: apiAction })
+            })
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}))
+                console.error('[Dashboard] handleApplication error:', errData)
+                throw new Error(errData.error || `Failed to ${action}`)
+            }
+
+            toast({
+                title: action === 'accept' ? "✅ Accepted!" : "Rejected",
+                description: action === 'accept' ? "Applicant has been added to the team." : "Application rejected.",
+                variant: action === 'accept' ? 'success' : 'default'
+            })
             fetchData()
-        } catch (error) {
-            toast({ title: "Error", description: `Failed to ${action} application`, variant: "destructive" })
+        } catch (error: any) {
+            console.error('[Dashboard] handleApplication threw:', error)
+            toast({ title: "Error", description: error.message || `Failed to ${action} application`, variant: "destructive" })
         }
     }
 
