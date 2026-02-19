@@ -1,28 +1,47 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
-// Helper to get Supabase client
-function getSupabaseClient() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    if (!supabaseUrl || !supabaseKey) {
-        throw new Error('Missing Supabase credentials');
-    }
-    return createClient(supabaseUrl, supabaseKey);
-}
-
-// Helper
+/**
+ * Checks if userId is an admin of the team.
+ * Checks BOTH team_members.role (for members) AND teams.creator_id (for creators).
+ * This handles cases where the creator was never inserted into team_members.
+ */
 async function isTeamAdmin(teamId: string, userId: string): Promise<boolean> {
-    const supabase = getSupabaseClient();
-    const { data } = await supabase
+    // Check 1: Is this user in team_members with an admin role?
+    const { data: memberRow } = await supabaseAdmin
         .from('team_members')
         .select('role')
         .eq('team_id', teamId)
         .eq('user_id', userId)
-        .single();
-    return ['admin', 'Leader', 'creator'].includes(data?.role);
+        .maybeSingle();
+
+    if (memberRow && ['admin', 'Leader', 'creator'].includes(memberRow.role)) {
+        return true;
+    }
+
+    // Check 2 (fallback): Is this user the creator of the team?
+    const { data: team } = await supabaseAdmin
+        .from('teams')
+        .select('creator_id')
+        .eq('id', teamId)
+        .maybeSingle();
+
+    if (team?.creator_id === userId) {
+        // Auto-repair: ensure creator is in team_members
+        await supabaseAdmin.from('team_members').upsert(
+            { team_id: teamId, user_id: userId, role: 'admin' },
+            { onConflict: 'team_id,user_id' }
+        );
+        return true;
+    }
+
+    return false;
 }
 
+/**
+ * GET /api/teams/[id]/applications
+ * Returns all pending applications for a team with applicant profiles.
+ */
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -30,9 +49,7 @@ export async function GET(
     const teamId = (await params).id;
 
     try {
-        const supabase = getSupabaseClient();
-        // Step 1: Fetch pending applications from team_applications table
-        const { data: applications, error: appsError } = await supabase
+        const { data: applications, error: appsError } = await supabaseAdmin
             .from('team_applications')
             .select('id, created_at, applicant_id, message, status')
             .eq('team_id', teamId)
@@ -47,24 +64,19 @@ export async function GET(
             return NextResponse.json([]);
         }
 
-        // Step 2: Fetch profiles for all applicants
-        const applicantIds = applications.map(a => a.applicant_id);
-        const { data: profiles, error: profilesError } = await supabase
+        // Fetch profiles for applicants
+        const applicantIds = applications.map((a: any) => a.applicant_id);
+        const { data: profiles } = await supabaseAdmin
             .from('profiles')
             .select('id, first_name, last_name, photos, bio')
             .in('id', applicantIds);
 
-        if (profilesError) {
-            console.error('Error fetching applicant profiles:', profilesError);
-        }
-
-        // Step 3: Merge applications with profiles
-        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-        const applicationsWithProfiles = applications.map(app => {
-            const profile = profileMap.get(app.applicant_id);
+        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+        const applicationsWithProfiles = applications.map((app: any) => {
+            const profile: any = profileMap.get(app.applicant_id);
             return {
                 ...app,
-                user1_id: app.applicant_id, // For backward compatibility with dashboard UI
+                user1_id: app.applicant_id,
                 profiles: profile ? {
                     id: profile.id,
                     first_name: profile.first_name || '',
@@ -88,61 +100,89 @@ export async function GET(
     }
 }
 
+/**
+ * POST /api/teams/[id]/applications
+ * Accepts or rejects a pending application.
+ * Body: { userId (admin), applicationId, action: 'accept'|'reject', targetUserId (applicant) }
+ */
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const teamId = (await params).id;
-    const { userId, applicationId, action, targetUserId } = await request.json();
 
-    if (!userId || !action || !targetUserId) {
-        return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+    let body: any;
+    try {
+        body = await request.json();
+    } catch {
+        return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
 
-    // Verify Admin
-    if (!(await isTeamAdmin(teamId, userId))) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    const { userId, applicationId, action, targetUserId } = body;
+
+    if (!userId || !action || !targetUserId) {
+        return NextResponse.json(
+            { error: `Missing required fields. Got: userId=${userId}, action=${action}, targetUserId=${targetUserId}` },
+            { status: 400 }
+        );
+    }
+
+    if (!['accept', 'reject'].includes(action)) {
+        return NextResponse.json({ error: `Invalid action: ${action}` }, { status: 400 });
+    }
+
+    // Verify the requester is an admin (checks both team_members AND creator_id)
+    const adminCheck = await isTeamAdmin(teamId, userId);
+    if (!adminCheck) {
+        return NextResponse.json(
+            { error: `Unauthorized: User ${userId} is not an admin of team ${teamId}` },
+            { status: 403 }
+        );
     }
 
     try {
-        const supabase = getSupabaseClient();
         if (action === 'accept') {
-            // 1. Update application status
-            const { error: appError } = await supabase
+            // 1. Mark application as accepted
+            const { error: appError } = await supabaseAdmin
                 .from('team_applications')
                 .update({ status: 'accepted' })
                 .eq('team_id', teamId)
                 .eq('applicant_id', targetUserId);
 
-            if (appError) return NextResponse.json({ error: appError.message }, { status: 500 });
+            if (appError) {
+                console.error('Error accepting application:', appError);
+                return NextResponse.json({ error: appError.message }, { status: 500 });
+            }
 
-            // 2. Add to team_members
-            const { error: memberError } = await supabase
+            // 2. Add applicant to team_members as 'member'
+            // NOTE: DB constraint requires lowercase 'member' (not 'Member')
+            const { error: memberError } = await supabaseAdmin
                 .from('team_members')
-                .upsert({
-                    team_id: teamId,
-                    user_id: targetUserId,
-                    role: 'member'  // must be lowercase to match DB CHECK constraint
-                }, { onConflict: 'team_id,user_id' });
+                .upsert(
+                    { team_id: teamId, user_id: targetUserId, role: 'member' },
+                    { onConflict: 'team_id,user_id' }
+                );
 
             if (memberError) {
-                console.error('Error adding member to team:', memberError);
+                console.error('Error adding accepted member to team_members:', memberError);
                 return NextResponse.json({ error: memberError.message }, { status: 500 });
             }
 
         } else if (action === 'reject') {
-            const { error } = await supabase
+            const { error } = await supabaseAdmin
                 .from('team_applications')
                 .update({ status: 'rejected' })
                 .eq('team_id', teamId)
                 .eq('applicant_id', targetUserId);
 
-            if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+            if (error) {
+                return NextResponse.json({ error: error.message }, { status: 500 });
+            }
         }
 
         return NextResponse.json({ success: true });
     } catch (e: any) {
-        console.error('Error processing application action:', e);
+        console.error('Error processing application:', e);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
