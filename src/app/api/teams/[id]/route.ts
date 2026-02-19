@@ -89,7 +89,37 @@ export async function GET(
             .select('*', { count: 'exact', head: true })
             .eq('team_id', teamId);
 
-        return NextResponse.json({ ...team, creator, member_count: count ?? 0 });
+        // AUTO-REPAIR: If creator has no member row, insert them now
+        // This silently fixes all legacy teams without running a manual SQL script
+        if ((count ?? 0) === 0 && team.creator_id) {
+            await supabase.from('team_members').upsert(
+                { team_id: teamId, user_id: team.creator_id, role: 'admin' },
+                { onConflict: 'team_id,user_id' }
+            );
+        } else if (team.creator_id) {
+            // Check if creator specifically is missing (team has other members but not creator)
+            const { data: creatorMember } = await supabase
+                .from('team_members')
+                .select('user_id')
+                .eq('team_id', teamId)
+                .eq('user_id', team.creator_id)
+                .maybeSingle();
+            if (!creatorMember) {
+                await supabase.from('team_members').upsert(
+                    { team_id: teamId, user_id: team.creator_id, role: 'admin' },
+                    { onConflict: 'team_id,user_id' }
+                );
+            }
+        }
+
+        // Re-fetch member count after potential repair
+        const { count: finalCount } = await supabase
+            .from('team_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('team_id', teamId);
+
+        return NextResponse.json({ ...team, creator, member_count: finalCount ?? 0 });
+
     } catch (e: any) {
         console.error('Critical error fetching team:', e);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

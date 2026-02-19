@@ -80,16 +80,15 @@ export default function TeamDashboard() {
             : { 'Content-Type': 'application/json' }
     }, [])
 
-    // Fetch Data
+    // Fetch Data - uses Supabase directly for reliability, avoids API chain issues
     const fetchData = useCallback(async () => {
         if (!teamId) return
 
         try {
-            // Get Current User - prioritize email (consistent with team creation flow)
+            // Get current user
             const localEmail = localStorage.getItem("user_email")
             let currentUserId = localEmail
 
-            // Fallback to Supabase auth
             if (!currentUserId) {
                 const { data: { user } } = await supabase.auth.getUser()
                 currentUserId = user?.email || user?.id || null
@@ -101,13 +100,18 @@ export default function TeamDashboard() {
             }
             setUserId(currentUserId)
 
-            // 1. Fetch Team Details
-            const authHeaders = await getAuthHeaders()
-            const resTeam = await fetch(`/api/teams/${teamId}`, {
-                headers: authHeaders
-            })
-            if (!resTeam.ok) throw new Error(`Failed to fetch team: ${resTeam.status}`)
-            const teamData = await resTeam.json()
+            // 1. Fetch team directly from Supabase
+            const { data: teamData, error: teamError } = await supabase
+                .from('teams')
+                .select('*')
+                .eq('id', teamId)
+                .single()
+
+            if (teamError || !teamData) {
+                toast({ title: "Error", description: "Team not found", variant: "destructive" })
+                setIsLoading(false)
+                return
+            }
             setTeam(teamData)
             setFormData({
                 title: teamData.title,
@@ -117,41 +121,131 @@ export default function TeamDashboard() {
                 skills_required: (teamData.skills_required || []).join(', ')
             })
 
-            // Determine if current user is the creator (owner)
+            // Determine if current user is the creator
             const isCreator = teamData.creator_id === currentUserId
 
-            // 2. Fetch Members
-            const resMembers = await fetch(`/api/teams/${teamId}/members`, {
-                headers: authHeaders
-            })
-            let membersData: TeamMember[] = []
-            if (resMembers.ok) {
-                membersData = await resMembers.json()
-                setMembers(membersData)
-            }
+            // 2. Fetch members directly from Supabase
+            const { data: rawMembers } = await supabase
+                .from('team_members')
+                .select('user_id, role, joined_at')
+                .eq('team_id', teamId)
 
-            // Determine Current Role
-            // Normalize: treat 'Leader', 'creator', and 'admin' all as admin
-            const myMember = membersData.find((m: TeamMember) => m.user_id === currentUserId)
-            const adminRoles = ['admin', 'Leader', 'creator']
-            const hasAdminRole = myMember && adminRoles.includes(myMember.role)
+            if (rawMembers && rawMembers.length > 0) {
+                // Fetch profiles for members
+                const userIds = rawMembers.map((m: any) => m.user_id)
+                const { data: profiles } = await supabase
+                    .from('profiles')
+                    .select('id, first_name, last_name, photos, bio')
+                    .in('id', userIds)
 
-            // CRITICAL: Always grant admin to the team creator, even if missing from team_members
-            // This handles: old teams before trigger, failed upserts, edge cases
-            if (hasAdminRole || isCreator) {
-                setCurrentUserRole('admin')
-            } else if (myMember) {
-                setCurrentUserRole('member')
-            } else {
-                setCurrentUserRole(null)
-            }
-
-            // 3. Fetch Applications (If Admin/Creator)
-            if (hasAdminRole || isCreator) {
-                const resApps = await fetch(`/api/teams/${teamId}/applications`, {
-                    headers: authHeaders
+                const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]))
+                const enriched: TeamMember[] = rawMembers.map((m: any) => {
+                    const p: any = profileMap.get(m.user_id)
+                    return {
+                        ...m,
+                        profiles: p ? {
+                            id: p.id,
+                            first_name: p.first_name || '',
+                            last_name: p.last_name || '',
+                            email: p.id,
+                            photos: p.photos || [],
+                            headline: p.bio || ''
+                        } : {
+                            id: m.user_id,
+                            first_name: m.user_id.split('@')[0],
+                            last_name: '',
+                            email: m.user_id,
+                            photos: [],
+                            headline: ''
+                        }
+                    }
                 })
-                if (resApps.ok) setApplications(await resApps.json())
+                setMembers(enriched)
+
+                // Determine role
+                const myMember = enriched.find((m) => m.user_id === currentUserId)
+                const hasAdminRole = myMember && ['admin', 'Leader', 'creator'].includes(myMember.role)
+
+                if (hasAdminRole || isCreator) {
+                    setCurrentUserRole('admin')
+                } else if (myMember) {
+                    setCurrentUserRole('member')
+                } else if (isCreator) {
+                    // Creator not in team_members yet — still grant access and auto-add
+                    setCurrentUserRole('admin')
+                    // Trigger repair via API in background
+                    fetch(`/api/teams/${teamId}`, { headers: { 'Content-Type': 'application/json' } })
+                } else {
+                    setCurrentUserRole(null)
+                }
+
+                // Fetch applications if admin
+                if (hasAdminRole || isCreator) {
+                    const { data: apps } = await supabase
+                        .from('team_applications')
+                        .select('id, created_at, applicant_id')
+                        .eq('team_id', teamId)
+                        .eq('status', 'pending')
+
+                    if (apps && apps.length > 0) {
+                        const appUserIds = apps.map((a: any) => a.applicant_id)
+                        const { data: appProfiles } = await supabase
+                            .from('profiles')
+                            .select('id, first_name, last_name, photos, bio')
+                            .in('id', appUserIds)
+
+                        const appProfileMap = new Map((appProfiles || []).map((p: any) => [p.id, p]))
+                        const enrichedApps = apps.map((a: any) => ({
+                            id: a.id,
+                            created_at: a.created_at,
+                            user1_id: a.applicant_id,
+                            profiles: appProfileMap.get(a.applicant_id) || {
+                                id: a.applicant_id,
+                                first_name: a.applicant_id.split('@')[0],
+                                last_name: '',
+                                photos: [],
+                                headline: ''
+                            }
+                        }))
+                        setApplications(enrichedApps)
+                    }
+                }
+            } else {
+                // No members in team_members at all
+                // If creator, still show dashboard and grant admin
+                if (isCreator) {
+                    setCurrentUserRole('admin')
+                    // Auto-repair: add creator to team_members via the repair trigger
+                    // Call the GET /api/teams/[id] which has auto-repair logic built-in
+                    const authHeaders = await getAuthHeaders()
+                    fetch(`/api/teams/${teamId}`, { headers: authHeaders })
+                        .then(() => {
+                            // Silently succeeds - the server auto-added them
+                            // Reload members after a brief delay
+                            setTimeout(async () => {
+                                const { data: repaired } = await supabase
+                                    .from('team_members')
+                                    .select('user_id, role, joined_at')
+                                    .eq('team_id', teamId)
+                                if (repaired && repaired.length > 0) {
+                                    setMembers(repaired.map((m: any) => ({
+                                        ...m,
+                                        profiles: {
+                                            id: m.user_id,
+                                            first_name: m.user_id.split('@')[0],
+                                            last_name: '',
+                                            email: m.user_id,
+                                            photos: [],
+                                            headline: ''
+                                        }
+                                    })))
+                                }
+                            }, 1000)
+                        })
+                } else {
+                    setCurrentUserRole(null)
+                }
+                setMembers([])
             }
 
         } catch (error) {
@@ -160,7 +254,8 @@ export default function TeamDashboard() {
         } finally {
             setIsLoading(false)
         }
-    }, [teamId, router, toast])
+    }, [teamId, router, toast, getAuthHeaders])
+
 
     useEffect(() => {
         fetchData()
