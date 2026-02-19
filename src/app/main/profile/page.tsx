@@ -15,6 +15,9 @@ export default function ProfilePage() {
     const [showPhotoPreview, setShowPhotoPreview] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Ref to block the profile-fetch from overwriting while upload is in progress
+    const uploadingRef = useRef(false);
+
     useEffect(() => {
         const storedEmail = localStorage.getItem("user_email");
         if (!storedEmail) {
@@ -26,6 +29,8 @@ export default function ProfilePage() {
         fetch(`/api/profile?email=${encodeURIComponent(storedEmail)}`)
             .then(res => res.ok ? res.json() : null)
             .then(data => {
+                // Don't overwrite the display URL if the user is mid-upload
+                if (uploadingRef.current) return;
                 if (data?.visuals?.photos?.length > 0) {
                     setPhotoUrl(data.visuals.photos[0]);
                 }
@@ -40,6 +45,7 @@ export default function ProfilePage() {
         // Show local preview immediately
         const localPreview = URL.createObjectURL(file);
         setPhotoUrl(localPreview);
+        uploadingRef.current = true;
         setUploadingPhoto(true);
 
         try {
@@ -54,23 +60,18 @@ export default function ProfilePage() {
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
                 console.error('Upload error:', errData);
-                // Keep showing local blob — don't revert to blank
-                // The image is visible locally even if server save failed
-                return;
+                // keep showing local blob even if server save failed — visible this session
+            } else {
+                // Upload saved to server — keep showing local blob (avoids CDN propagation lag)
+                // The server URL will be loaded fresh on next page visit
+                console.log('Photo uploaded successfully');
             }
-
-            const data = await res.json();
-            if (data?.url) {
-                // Switch to permanent server URL; keep blob alive briefly for smooth swap
-                setPhotoUrl(data.url);
-                setTimeout(() => URL.revokeObjectURL(localPreview), 5000);
-            }
-            // If no URL in response, local blob stays visible
 
         } catch (err: any) {
             console.error('Photo update failed:', err);
-            // Keep the blob preview visible — do NOT set to null
+            // blob preview stays visible — do NOT revert to null
         } finally {
+            uploadingRef.current = false;
             setUploadingPhoto(false);
             e.target.value = '';
         }
