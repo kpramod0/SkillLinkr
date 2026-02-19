@@ -82,7 +82,7 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
             if (!email) return
             try {
                 // Fetch profile data from API
-                const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`)
+                const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`, { cache: 'no-store' })
                 if (res.ok) {
                     const data = await res.json()
                     // If profile exists, populate form state

@@ -11,6 +11,9 @@ function getSupabase() {
 
 const BUCKET = 'uploads';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Silently ensure bucket exists — won't crash if permissions insufficient
 async function ensureBucket() {
     try {
