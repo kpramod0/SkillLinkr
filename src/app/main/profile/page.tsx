@@ -59,17 +59,21 @@ export default function ProfilePage() {
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                console.error('Upload error:', errData);
-                // keep showing local blob even if server save failed — visible this session
+                console.error('[profile] Upload failed:', errData);
+                // blob preview stays — user still sees their selection
             } else {
-                // Upload saved to server — keep showing local blob (avoids CDN propagation lag)
-                // The server URL will be loaded fresh on next page visit
-                console.log('Photo uploaded successfully');
+                const data = await res.json();
+                if (data?.url) {
+                    // Switch to the permanent server URL
+                    setPhotoUrl(data.url);
+                    // Revoke blob after a delay to avoid blank-frame during swap
+                    setTimeout(() => URL.revokeObjectURL(localPreview), 8000);
+                }
             }
 
         } catch (err: any) {
-            console.error('Photo update failed:', err);
-            // blob preview stays visible — do NOT revert to null
+            console.error('[profile] Photo update error:', err);
+            // blob stays visible on error
         } finally {
             uploadingRef.current = false;
             setUploadingPhoto(false);

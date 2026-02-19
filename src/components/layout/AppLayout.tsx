@@ -57,13 +57,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <div className="px-4 mb-8">
                         <Link href="/main/discover" className="flex items-center gap-3 group">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                                src="/logo_icon.png"
-                                alt="SkillLinkr Logo"
-                                width={56}
-                                height={56}
-                                className="h-14 w-14 rounded-lg object-cover shrink-0"
-                            />
+                            <div className="h-10 w-14 rounded-lg overflow-hidden shrink-0 flex items-center justify-center">
+                                <img
+                                    src="/logo_icon.png"
+                                    alt="SkillLinkr Logo"
+                                    className="w-14 h-auto object-cover object-center"
+                                    style={{ marginTop: '-15%', marginBottom: '-15%' }}
+                                />
+                            </div>
                             <span className={cn(
                                 "font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 to-cyan-500 whitespace-nowrap transition-all duration-300",
                                 sidebarExpanded ? "opacity-100 w-auto" : "opacity-0 w-0 overflow-hidden"
