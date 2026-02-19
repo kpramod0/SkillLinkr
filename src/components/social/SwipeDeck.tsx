@@ -344,17 +344,17 @@ export function SwipeDeck() {
     return (
         <div className="flex flex-col h-full w-full md:max-w-sm mx-auto relative overflow-hidden">
 
-            {/* Header: Toggle | Count */}
-            <div className="absolute top-6 left-0 right-0 z-50 flex items-center px-4 pointer-events-none gap-3">
+            {/* Header: Toggle (centered) + Count (right, only in Teams mode) */}
+            <div className="absolute top-6 left-0 right-0 z-50 flex items-center justify-center px-4 pointer-events-none">
 
-                {/* Toggle — slightly left, not centered */}
+                {/* Toggle — always centered */}
                 <div className="flex-shrink-0 pointer-events-auto">
                     <DiscoveryToggle mode={mode} onChange={(m) => setMode(m as any)} />
                 </div>
 
-                {/* Member Count — right next to toggle, only in Teams mode */}
+                {/* Member Count — absolutely positioned to the right, same vertical level */}
                 {mode === 'teams' && discoverableTeams.length > 0 && (
-                    <div className="pointer-events-auto">
+                    <div className="absolute right-4 pointer-events-auto">
                         <button
                             onClick={() => setIsMembersModalOpen(true)}
                             className="bg-background/80 backdrop-blur-md border rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-background transition-colors text-xs font-medium"
