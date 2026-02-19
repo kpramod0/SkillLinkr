@@ -60,9 +60,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                             <img
                                 src="/logo_icon.png"
                                 alt="SkillLinkr Logo"
-                                width={48}
-                                height={48}
-                                className="h-12 w-12 rounded-lg object-cover shrink-0"
+                                width={56}
+                                height={56}
+                                className="h-14 w-14 rounded-lg object-cover shrink-0"
                             />
                             <span className={cn(
                                 "font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 to-cyan-500 whitespace-nowrap transition-all duration-300",

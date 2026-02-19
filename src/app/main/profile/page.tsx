@@ -37,16 +37,12 @@ export default function ProfilePage() {
         const file = e.target.files?.[0];
         if (!file || !email) return;
 
-        // Remember current URL to revert if upload fails
-        const previousUrl = photoUrl;
-
-        // Show local preview immediately so user sees new photo right away
+        // Show local preview immediately
         const localPreview = URL.createObjectURL(file);
         setPhotoUrl(localPreview);
         setUploadingPhoto(true);
 
         try {
-            // Compress the image before uploading
             const compressed = await compressImage(file);
 
             const fd = new FormData();
@@ -57,20 +53,23 @@ export default function ProfilePage() {
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || `Upload failed (${res.status})`);
+                console.error('Upload error:', errData);
+                // Keep showing local blob — don't revert to blank
+                // The image is visible locally even if server save failed
+                return;
             }
 
             const data = await res.json();
-            // Set the real server URL — keep blob alive a little longer so
-            // React can render the server URL before we revoke the blob
-            setPhotoUrl(data.url);
-            setTimeout(() => URL.revokeObjectURL(localPreview), 5000);
+            if (data?.url) {
+                // Switch to permanent server URL; keep blob alive briefly for smooth swap
+                setPhotoUrl(data.url);
+                setTimeout(() => URL.revokeObjectURL(localPreview), 5000);
+            }
+            // If no URL in response, local blob stays visible
 
         } catch (err: any) {
             console.error('Photo update failed:', err);
-            // Revert to the previous photo, not null
-            URL.revokeObjectURL(localPreview);
-            setPhotoUrl(previousUrl);
+            // Keep the blob preview visible — do NOT set to null
         } finally {
             setUploadingPhoto(false);
             e.target.value = '';

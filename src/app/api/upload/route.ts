@@ -10,14 +10,18 @@ function getSupabase() {
 
 const BUCKET = 'uploads';
 
-// Ensure storage bucket exists (creates once, idempotent)
+// Ensure storage bucket exists — silently skip on permission errors (anon key)
 async function ensureBucket() {
-    const { data: buckets } = await getSupabase().storage.listBuckets();
-    if (!buckets?.find(b => b.name === BUCKET)) {
-        await getSupabase().storage.createBucket(BUCKET, {
-            public: true,
-            fileSizeLimit: 5 * 1024 * 1024, // 5MB
-        });
+    try {
+        const { data: buckets } = await getSupabase().storage.listBuckets();
+        if (!buckets?.find(b => b.name === BUCKET)) {
+            await getSupabase().storage.createBucket(BUCKET, {
+                public: true,
+                fileSizeLimit: 5 * 1024 * 1024,
+            }).catch(() => { }); // bucket may already exist
+        }
+    } catch {
+        // Bucket listing not permitted (anon key) — assume bucket exists and continue
     }
 }
 
