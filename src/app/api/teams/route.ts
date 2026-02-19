@@ -5,86 +5,84 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// --- Auth Client (Lightweight) ---
-// Only used to validate JWT and get user identity.
-// Doesn't need service role privileges.
 function getSupabaseAuth() {
     return createClient(supabaseUrl, supabaseAnonKey, {
         auth: { persistSession: false },
     });
 }
 
-/**
- * Validates the request's Bearer token and returns the user's email.
- * This ensures that subsequent actions are performed on behalf of a verified user.
- */
 async function requireAuthEmail(req: Request): Promise<string | null> {
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) return null;
-
     const { data, error } = await getSupabaseAuth().auth.getUser(token);
     if (error || !data?.user?.email) return null;
     return data.user.email;
 }
 
 /**
- * Helper to format an array of IDs for PostgREST `not.in` filter.
- * Handles both number and string IDs safely.
+ * Enriches an array of raw team rows with creator profile + member count.
+ * Uses supabaseAdmin to bypass RLS. Completely avoids PostgREST FK joins.
  */
-function asInList(ids: Array<string | number>) {
-    // PostgREST expects strings quoted for `in.(...)`
-    return `(${ids
-        .map((id) => (typeof id === 'number' ? `${id}` : `"${String(id).replace(/"/g, '\\"')}"`))
-        .join(',')})`;
+async function enrichTeams(teams: any[]): Promise<any[]> {
+    if (!teams || teams.length === 0) return [];
+
+    const teamIds = teams.map((t) => t.id);
+    const creatorIds = [...new Set(teams.map((t) => t.creator_id).filter(Boolean))];
+
+    // Fetch all creator profiles in one query
+    const { data: creatorProfiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, first_name, last_name, photos, bio')
+        .in('id', creatorIds);
+
+    const creatorMap = new Map(((creatorProfiles || []) as any[]).map((p: any) => [p.id, p]));
+
+    // Fetch member counts for all teams in one query
+    const { data: memberCounts } = await supabaseAdmin
+        .from('team_members')
+        .select('team_id')
+        .in('team_id', teamIds);
+
+    // Count per team
+    const countMap = new Map<string, number>();
+    (memberCounts || []).forEach((row: any) => {
+        countMap.set(row.team_id, (countMap.get(row.team_id) || 0) + 1);
+    });
+
+    return teams.map((team) => {
+        const cp = creatorMap.get(team.creator_id);
+        return {
+            ...team,
+            creator: cp ? { ...cp, short_bio: cp.bio } : null,
+            member_count: countMap.get(team.id) || 0,
+            // Keep members array shape for backward compat but use count
+            members: Array(countMap.get(team.id) || 0).fill({}),
+        };
+    });
 }
 
 /**
- * GET Handler
- * Supports two modes via 'filter' query param:
- * 1. 'discover': Shows open teams that I can join (excludes my own, ones I applied to, or am member of).
- * 2. 'mine': Shows teams I created or am a member of.
+ * GET /api/teams
+ * filter=mine    → Teams I created or joined
+ * filter=discover → Open teams I haven't joined/applied to
  */
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
-    const userIdParam = searchParams.get('userId'); // optional
-    const filter = searchParams.get('filter') || 'discover'; // 'discover' | 'mine'
+    const userIdParam = searchParams.get('userId');
+    const filter = searchParams.get('filter') || 'discover';
 
     const authEmail = await requireAuthEmail(req);
     const userId = authEmail || userIdParam || null;
 
-    // Security: If caller is authenticated, do not allow impersonation via query param
     if (authEmail && userIdParam && userIdParam !== authEmail) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     try {
-        // Base selection with relations
-        const baseSelect = `
-      *,
-      creator: creator_id (id, first_name, last_name, photos, short_bio: bio),
-      members: team_members (
-        user: user_id (*)
-      )
-    `;
-
-        // Case 1: Guest discovery (Unauthenticated)
-        // Just show all open teams
-        if (!userId) {
-            const { data, error } = await supabaseAdmin
-                .from('teams')
-                .select(baseSelect)
-                .eq('status', 'open')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            return NextResponse.json(data || []);
-        }
-
-        // Case 2: 'Mine' Filter (My Teams)
-        // Returns union of: Teams I created + Teams I joined
+        // --- MINE filter ---
         if (filter === 'mine') {
-            // A. Find team IDs where I am a member
+            // Find team IDs where I am a member
             const { data: memberRows, error: memberErr } = await supabaseAdmin
                 .from('team_members')
                 .select('team_id')
@@ -92,23 +90,23 @@ export async function GET(req: Request) {
 
             if (memberErr) throw memberErr;
 
-            const memberTeamIds = (memberRows || []).map((r) => r.team_id);
+            const memberTeamIds = (memberRows || []).map((r: any) => r.team_id);
 
-            // B. Fetch teams I created (Owner)
+            // Fetch teams I created
             const { data: owned, error: ownedErr } = await supabaseAdmin
                 .from('teams')
-                .select(baseSelect)
+                .select('*')
                 .eq('creator_id', userId)
                 .order('created_at', { ascending: false });
 
             if (ownedErr) throw ownedErr;
 
-            // C. Fetch teams from (A) where I am just a member
+            // Fetch teams I joined (but didn't create)
             let memberTeams: any[] = [];
             if (memberTeamIds.length > 0) {
                 const { data: mt, error: mtErr } = await supabaseAdmin
                     .from('teams')
-                    .select(baseSelect)
+                    .select('*')
                     .in('id', memberTeamIds)
                     .order('created_at', { ascending: false });
 
@@ -116,63 +114,62 @@ export async function GET(req: Request) {
                 memberTeams = mt || [];
             }
 
-            // D. Merge unique by ID (in case I am both creator and member, theoretically)
-            const map = new Map<string | number, any>();
+            // Merge unique by ID
+            const map = new Map<string, any>();
             [...(owned || []), ...memberTeams].forEach((t) => map.set(t.id, t));
-            const merged = Array.from(map.values()).sort((a, b) => {
-                const ta = new Date(a.created_at || 0).getTime();
-                const tb = new Date(b.created_at || 0).getTime();
-                return tb - ta;
-            });
+            const rawTeams = Array.from(map.values()).sort((a, b) =>
+                new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+            );
 
-            return NextResponse.json(merged);
+            const enriched = await enrichTeams(rawTeams);
+            return NextResponse.json(enriched);
         }
 
-        // Case 3: 'Discover' Filter (Find new teams)
-        // MUST EXCLUDE:
-        // - Teams I own
-        // - Teams I have applied to (pending/accepted)
-        // - Teams I am already a member of
-        let query = supabaseAdmin
-            .from('teams')
-            .select(baseSelect)
-            .eq('status', 'open')
-            .neq('creator_id', userId) // Exclude owned
-            .order('created_at', { ascending: false });
+        // --- DISCOVER filter ---
+        if (!userId) {
+            // Guest: show all open teams
+            const { data, error } = await supabaseAdmin
+                .from('teams')
+                .select('*')
+                .eq('status', 'open')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return NextResponse.json(await enrichTeams(data || []));
+        }
 
-        // A. Find applications to exclude
-        const { data: apps, error: appsErr } = await supabaseAdmin
+        // Exclude: teams I applied to (pending/accepted)
+        const { data: apps } = await supabaseAdmin
             .from('team_applications')
-            .select('team_id,status')
+            .select('team_id')
             .eq('applicant_id', userId)
             .in('status', ['pending', 'accepted']);
 
-        if (appsErr) throw appsErr;
-
-        const appliedIds = (apps || []).map((a) => a.team_id);
-
-        // B. Find memberships to exclude
-        const { data: members, error: memErr } = await supabaseAdmin
+        // Exclude: teams I'm already a member of
+        const { data: myMemberships } = await supabaseAdmin
             .from('team_members')
             .select('team_id')
             .eq('user_id', userId);
 
-        if (memErr) throw memErr;
+        const excludedIds = Array.from(new Set([
+            ...(apps || []).map((a: any) => a.team_id),
+            ...(myMemberships || []).map((m: any) => m.team_id),
+        ]));
 
-        const memberIds = (members || []).map((m) => m.team_id);
-
-        // C. Apply Exclusion
-        const excludedIds = Array.from(new Set([...appliedIds, ...memberIds]));
+        let query = supabaseAdmin
+            .from('teams')
+            .select('*')
+            .eq('status', 'open')
+            .neq('creator_id', userId)
+            .order('created_at', { ascending: false });
 
         if (excludedIds.length > 0) {
-            // Use helper to format list for PostgREST
-            query = query.not('id', 'in', asInList(excludedIds));
+            query = query.not('id', 'in', `(${excludedIds.map(id => `"${id}"`).join(',')})`);
         }
 
         const { data, error } = await query;
         if (error) throw error;
 
-        return NextResponse.json(data || []);
+        return NextResponse.json(await enrichTeams(data || []));
     } catch (error) {
         console.error('Server error fetching teams:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
@@ -180,29 +177,25 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST Handler
- * Creates a new team and automatically adds the creator as the first admin member.
+ * POST /api/teams
+ * Creates a new team and adds creator as admin in team_members.
  */
 export async function POST(req: Request) {
     const authEmail = await requireAuthEmail(req);
-    // Note: We allow !authEmail here to support custom auth flow (checking creatorId in body)
-    // if (!authEmail) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     try {
         const body = await req.json();
         const { creatorId, title, description, eventName, rolesNeeded, skillsRequired } = body;
 
-        // Basic validation
         if (!creatorId || !title || !description) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        // Security: Prevent impersonation ONLY if authenticated
         if (authEmail && creatorId !== authEmail) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        // 1) Create team record
+        // 1) Create team
         const { data: team, error: teamError } = await supabaseAdmin
             .from('teams')
             .insert({
@@ -222,8 +215,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to create team' }, { status: 500 });
         }
 
-        // 2) Add creator as member (idempotent)
-        // This ensures the creator immediately has access to the team chat and dashboard
+        // 2) Add creator as admin member — CRITICAL: this enables dashboard access and member count = 1
         const { error: memberError } = await supabaseAdmin
             .from('team_members')
             .upsert(
@@ -232,12 +224,15 @@ export async function POST(req: Request) {
             );
 
         if (memberError) {
-            console.error('Error adding creator to team:', memberError);
-            // Non-blocking error: Team was created, but membership failed.
-            // Client might need to retry joining or backend should rollback (advanced).
+            console.error('CRITICAL: Failed to add creator to team_members:', memberError);
+            // Try plain insert as fallback
+            await supabaseAdmin
+                .from('team_members')
+                .insert({ team_id: team.id, user_id: creatorId, role: 'admin' });
         }
 
-        return NextResponse.json(team);
+        // Return with member_count = 1 immediately
+        return NextResponse.json({ ...team, member_count: 1 });
     } catch (error) {
         console.error('Server error creating team:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

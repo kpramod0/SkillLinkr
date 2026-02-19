@@ -15,7 +15,9 @@ interface TeamSync {
     id: number
     title: string
     status: 'open' | 'closed'
-    members: { id: number }[] // Just need count
+    creator_id?: string
+    member_count: number
+    members?: any[]
 }
 
 export function MyTeamsModal({ isOpen, onClose }: MyTeamsModalProps) {
@@ -36,13 +38,12 @@ export function MyTeamsModal({ isOpen, onClose }: MyTeamsModalProps) {
             const email = localStorage.getItem("user_email")
             if (!email) return
 
-            // We can reuse /api/teams but filter client side or add a query param?
-            // /api/teams returns ALL teams. Better to add query param ?creatorId=... 
-            // Or just filter client side for MVP since list isn't huge yet.
-            const res = await fetch('/api/teams')
+            // Use filter=mine to get only teams I created or joined
+            const res = await fetch(`/api/teams?filter=mine&userId=${encodeURIComponent(email)}`, {
+                headers: { 'Content-Type': 'application/json' }
+            })
             if (res.ok) {
-                const allTeams = await res.json()
-                const myTeams = allTeams.filter((t: any) => t.creator?.id === email)
+                const myTeams = await res.json()
                 setTeams(myTeams)
             }
         } catch (error) {
@@ -102,7 +103,7 @@ export function MyTeamsModal({ isOpen, onClose }: MyTeamsModalProps) {
                                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                         <div className="flex items-center gap-1">
                                             <Users className="h-3 w-3" />
-                                            {team.members?.length || 0} Members
+                                            {(team.member_count ?? team.members?.length ?? 0)} Member{(team.member_count ?? team.members?.length ?? 0) !== 1 ? 's' : ''}
                                         </div>
                                         <span className={`px-1.5 py-0.5 rounded-full border ${team.status === 'open' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}`}>
                                             {team.status === 'open' ? 'Recruiting' : 'Closed'}
