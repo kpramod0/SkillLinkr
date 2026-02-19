@@ -1,57 +1,75 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-function getSupabase() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    // Use service role key to bypass RLS — falls back to anon key if not set
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
-    return createClient(supabaseUrl, supabaseKey);
-}
+
 
 const BUCKET = 'uploads';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Silently ensure bucket exists — won't crash if permissions insufficient
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+    if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+
+    return createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false },
+    });
+}
+
 async function ensureBucket() {
     try {
         const sb = getSupabase();
-        const { data: buckets } = await sb.storage.listBuckets();
+        const { data: buckets, error } = await sb.storage.listBuckets();
+
+        if (error) {
+            // If listing fails (e.g. RLS), we just proceed hoping bucket exists
+            return;
+        }
+
         if (!buckets?.find(b => b.name === BUCKET)) {
             await sb.storage.createBucket(BUCKET, {
                 public: true,
                 fileSizeLimit: 5 * 1024 * 1024,
-            }).catch(() => { }); // may already exist
+            }).catch(() => { });
         }
-    } catch {
-        // Bucket listing blocked (insufficient permissions) — assume bucket exists
-    }
+    } catch { }
 }
 
-// POST: Upload file, save URL to profiles.photos
+function safeFolderName(userId: string) {
+    return userId.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export async function POST(request: Request) {
     try {
         await ensureBucket();
 
         const formData = await request.formData();
         const file = formData.get('file') as File;
-        // userId is the user's EMAIL — in this app, profiles.id = email
+        // In this app, userId IS the email. Keeping it as string.
         const userId = formData.get('userId') as string;
 
         if (!file) {
             return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
         }
+        if (!userId) {
+            return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
+        }
 
-        // Build unique storage path
-        const ext = file.name.split('.').pop() || 'jpg';
+        // Detect extension
+        let ext = "jpg";
+        if (file.type === "image/webp") ext = "webp";
+        else if (file.type === "image/png") ext = "png";
+        else if (file.type === "image/jpeg") ext = "jpg";
+
         const timestamp = Date.now();
         const random = Math.random().toString(36).substring(7);
-        const folder = userId ? `users/${userId.replace(/[@.]/g, '_')}` : 'general';
+        const folder = `users/${safeFolderName(userId)}`;
         const filePath = `${folder}/${timestamp}_${random}.${ext}`;
 
-        // Upload to Supabase Storage
         const buffer = Buffer.from(await file.arrayBuffer());
         const sb = getSupabase();
 
@@ -59,7 +77,7 @@ export async function POST(request: Request) {
             .from(BUCKET)
             .upload(filePath, buffer, {
                 contentType: file.type,
-                upsert: true, // overwrite if same path (shouldn't happen with timestamps)
+                upsert: true,
             });
 
         if (uploadError) {
@@ -67,60 +85,44 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Storage upload failed: ' + uploadError.message }, { status: 500 });
         }
 
-        // Get the public URL
         const { data: urlData } = sb.storage.from(BUCKET).getPublicUrl(filePath);
-        const publicUrl = urlData.publicUrl;
 
-        // Save URL to profiles.photos
-        // IMPORTANT: in this app, profiles.id = user's email address
-        if (userId) {
-            // Fetch current photos array
-            const { data: profileRow, error: fetchError } = await sb
-                .from('profiles')
-                .select('photos')
-                .eq('id', userId)   // profiles.id = email
-                .single();
+        // Cache busting URL (versioned)
+        const publicUrl = `${urlData.publicUrl}?v=${timestamp}`;
 
-            if (fetchError) {
-                console.warn('[upload] Could not fetch profile photos, will attempt direct update:', fetchError.message);
-            }
+        // Fetch existing photos to preserve gallery
+        const { data: profileRow } = await sb
+            .from('profiles')
+            .select('photos')
+            .eq('id', userId)
+            .maybeSingle();
 
-            const existingPhotos: string[] = profileRow?.photos || [];
-            // Replace avatar (index 0) with the new photo, keep remaining as gallery (max 5 total)
-            const gallery = existingPhotos.slice(1, 4); // keep non-avatar photos
-            const updatedPhotos = [publicUrl, ...gallery];
+        const existingPhotos: string[] = profileRow?.photos || [];
+        // Replace avatar (index 0)
+        const gallery = existingPhotos.slice(1, 4);
+        const updatedPhotos = [publicUrl, ...gallery];
 
-            const { data: updatedRows, error: updateError } = await sb
-                .from('profiles')
-                .update({ photos: updatedPhotos })
-                .eq('id', userId)   // profiles.id = email
-                .select();
+        const { data: updatedRows, error: updateError } = await sb
+            .from('profiles')
+            .update({ photos: updatedPhotos })
+            .eq('id', userId)
+            .select();
 
-            if (updateError) {
-                console.error('[upload] DB update error:', updateError);
-                // Return error to client so they know persistence failed
-                return NextResponse.json({ error: 'Database update failed: ' + updateError.message }, { status: 500 });
-            } else if (!updatedRows || updatedRows.length === 0) {
-                // Row missing! The auth trigger likely failed.
-                // Fallback: Create the profile row now.
-                console.warn('[upload] Profile row missing for', userId, '— creating fallback row.');
+        if (updateError) {
+            console.error('[upload] DB update failed:', updateError);
+            return NextResponse.json({ error: 'Database update failed: ' + updateError.message }, { status: 500 });
+        } else if (!updatedRows || updatedRows.length === 0) {
+            // Fallback: Create row if missing
+            console.warn('[upload] Profile row missing for', userId, '— creating fallback row.');
+            const { error: insertError } = await sb.from('profiles').insert({
+                id: userId,
+                photos: updatedPhotos,
+                role: 'student',
+                onboarding_completed: false
+            });
 
-                const { error: insertError } = await sb
-                    .from('profiles')
-                    .insert({
-                        id: userId,
-                        photos: updatedPhotos,
-                        // Set minimal defaults
-                        role: 'student',
-                        onboarding_completed: false
-                    });
-
-                if (insertError) {
-                    console.error('[upload] Fallback insert failed:', insertError);
-                    return NextResponse.json({ error: 'Profile creation failed: ' + insertError.message }, { status: 500 });
-                }
-            } else {
-                console.log('[upload] Saved photos to profile:', userId);
+            if (insertError) {
+                return NextResponse.json({ error: 'Profile creation failed: ' + insertError.message }, { status: 500 });
             }
         }
 
@@ -137,6 +139,7 @@ export async function POST(request: Request) {
 }
 
 // DELETE: Remove file from storage and profile photos array
+// DELETE: Remove file from storage and profile photos array
 export async function DELETE(request: Request) {
     try {
         // Accept both `url` (ProfileEditor) and `photoUrl` (legacy) for backwards compatibility
@@ -151,7 +154,9 @@ export async function DELETE(request: Request) {
 
         // Remove from Supabase Storage
         const urlParts = photoUrl.split(`/storage/v1/object/public/${BUCKET}/`);
-        const filePath = urlParts[1];
+        // Remove query params (e.g. ?v=123) to get the actual file path
+        const filePath = urlParts[1]?.split('?')[0];
+
         if (filePath) {
             await sb.storage.from(BUCKET).remove([filePath]).catch(() => { });
         }
@@ -165,7 +170,10 @@ export async function DELETE(request: Request) {
                 .single();
 
             if (profileRow?.photos) {
-                const updatedPhotos = profileRow.photos.filter((p: string) => p !== photoUrl);
+                // Filter out the photo, ignoring query params for matching
+                const targetBase = photoUrl.split('?')[0];
+                const updatedPhotos = profileRow.photos.filter((p: string) => p.split('?')[0] !== targetBase);
+
                 await sb
                     .from('profiles')
                     .update({ photos: updatedPhotos })
