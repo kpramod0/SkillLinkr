@@ -37,7 +37,7 @@ export function OnboardingWizard({ email }: WizardProps) {
         const fetchProfile = async () => {
             if (!email) return
             try {
-                const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`)
+                const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`, { cache: 'no-store' })
                 if (res.ok) {
                     const data = await res.json()
                     if (data && data.personal) {
