@@ -58,7 +58,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         <Link href="/main/discover" className="flex items-center gap-3 group">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                                src="/logo.png"
+                                src="/logo_icon.png"
                                 alt="SkillLinkr Logo"
                                 width={32}
                                 height={32}

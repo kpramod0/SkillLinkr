@@ -37,29 +37,54 @@ export default function ProfilePage() {
         const file = e.target.files?.[0];
         if (!file || !email) return;
 
+        // Instantly show a local preview so user sees their new photo immediately
+        const localPreview = URL.createObjectURL(file);
+        setPhotoUrl(localPreview);
         setUploadingPhoto(true);
+
         try {
-            // Delete old photo first if exists
-            if (photoUrl) {
+            // Compress the image
+            const compressed = await compressImage(file);
+
+            // Delete old photo from storage if we had a real server URL (not a blob: URL)
+            const currentUrl = photoUrl;
+            if (currentUrl && !currentUrl.startsWith('blob:')) {
                 await fetch('/api/upload', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: photoUrl, userId: email })
-                });
+                    body: JSON.stringify({ photoUrl: currentUrl, userId: email })
+                }).catch(() => { }); // ignore delete errors
             }
 
-            // Compress & upload new photo
-            const compressed = await compressImage(file);
+            // Upload the new photo
             const fd = new FormData();
             fd.append('file', compressed);
             fd.append('userId', email);
             const res = await fetch('/api/upload', { method: 'POST', body: fd });
-            if (res.ok) {
-                const data = await res.json();
-                setPhotoUrl(data.url);
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Upload failed (${res.status})`);
             }
-        } catch (err) {
-            console.error('Photo change failed:', err);
+
+            const data = await res.json();
+
+            // Use the server URL with a cache buster to force browser to load new image
+            const freshUrl = data.url + '?v=' + Date.now();
+            setPhotoUrl(freshUrl);
+
+            // Revoke the local object URL to free memory
+            URL.revokeObjectURL(localPreview);
+
+        } catch (err: any) {
+            console.error('Photo update failed:', err);
+            // Revert to whatever was there before if upload failed
+            // Re-fetch from server to get the real state
+            try {
+                const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
+                const profile = res.ok ? await res.json() : null;
+                setPhotoUrl(profile?.visuals?.photos?.[0] ?? null);
+            } catch { }
         } finally {
             setUploadingPhoto(false);
             e.target.value = '';
