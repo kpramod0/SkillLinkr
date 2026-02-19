@@ -67,7 +67,7 @@ export async function POST(request: Request) {
             const { data: profile } = await getSupabase()
                 .from('profiles')
                 .select('photos')
-                .eq('id', userId)
+                .eq('email', userId)
                 .single();
 
             photos = profile?.photos || [];
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
             await getSupabase()
                 .from('profiles')
                 .update({ photos })
-                .eq('id', userId);
+                .eq('email', userId);
         }
 
         return NextResponse.json({
@@ -114,7 +114,7 @@ export async function DELETE(request: Request) {
             const { data: profile } = await getSupabase()
                 .from('profiles')
                 .select('photos')
-                .eq('id', userId)
+                .eq('email', userId)
                 .single();
 
             if (profile?.photos) {
@@ -122,7 +122,7 @@ export async function DELETE(request: Request) {
                 await getSupabase()
                     .from('profiles')
                     .update({ photos: updatedPhotos })
-                    .eq('id', userId);
+                    .eq('email', userId);
             }
         }
 
