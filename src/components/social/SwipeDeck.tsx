@@ -354,7 +354,7 @@ export function SwipeDeck() {
 
                 {/* Member Count — right side with gap and slight upward nudge to align with toggle mid */}
                 {mode === 'teams' && discoverableTeams.length > 0 && (
-                    <div className="absolute right-2 pointer-events-auto">
+                    <div className="absolute right-2 pointer-events-auto -translate-y-0.5">
                         <button
                             onClick={() => setIsMembersModalOpen(true)}
                             className="bg-background/80 backdrop-blur-md border rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-background transition-colors text-xs font-medium"

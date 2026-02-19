@@ -37,29 +37,22 @@ export default function ProfilePage() {
         const file = e.target.files?.[0];
         if (!file || !email) return;
 
-        // Instantly show a local preview so user sees their new photo immediately
+        // Remember current URL to revert if upload fails
+        const previousUrl = photoUrl;
+
+        // Show local preview immediately so user sees new photo right away
         const localPreview = URL.createObjectURL(file);
         setPhotoUrl(localPreview);
         setUploadingPhoto(true);
 
         try {
-            // Compress the image
+            // Compress the image before uploading
             const compressed = await compressImage(file);
 
-            // Delete old photo from storage if we had a real server URL (not a blob: URL)
-            const currentUrl = photoUrl;
-            if (currentUrl && !currentUrl.startsWith('blob:')) {
-                await fetch('/api/upload', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ photoUrl: currentUrl, userId: email })
-                }).catch(() => { }); // ignore delete errors
-            }
-
-            // Upload the new photo
             const fd = new FormData();
             fd.append('file', compressed);
             fd.append('userId', email);
+
             const res = await fetch('/api/upload', { method: 'POST', body: fd });
 
             if (!res.ok) {
@@ -68,23 +61,16 @@ export default function ProfilePage() {
             }
 
             const data = await res.json();
-
-            // Use the server URL with a cache buster to force browser to load new image
-            const freshUrl = data.url + '?v=' + Date.now();
-            setPhotoUrl(freshUrl);
-
-            // Revoke the local object URL to free memory
-            URL.revokeObjectURL(localPreview);
+            // Set the real server URL — keep blob alive a little longer so
+            // React can render the server URL before we revoke the blob
+            setPhotoUrl(data.url);
+            setTimeout(() => URL.revokeObjectURL(localPreview), 5000);
 
         } catch (err: any) {
             console.error('Photo update failed:', err);
-            // Revert to whatever was there before if upload failed
-            // Re-fetch from server to get the real state
-            try {
-                const res = await fetch(`/api/profile?email=${encodeURIComponent(email)}`);
-                const profile = res.ok ? await res.json() : null;
-                setPhotoUrl(profile?.visuals?.photos?.[0] ?? null);
-            } catch { }
+            // Revert to the previous photo, not null
+            URL.revokeObjectURL(localPreview);
+            setPhotoUrl(previousUrl);
         } finally {
             setUploadingPhoto(false);
             e.target.value = '';
