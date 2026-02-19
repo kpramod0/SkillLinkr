@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { compressImage } from "@/lib/imageUtils";
-import { LogOut, User as UserIcon, Camera, Edit2, X } from "lucide-react";
+import { LogOut, User as UserIcon, Camera, Edit2, X, Share2, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/components/forms/ProfileEditor";
 
@@ -71,6 +71,22 @@ export default function ProfilePage() {
         router.push("/login");
     };
 
+    const handleShareProfile = () => {
+        if (!email) return;
+        const shareUrl = `${window.location.origin}/profile/${encodeURIComponent(email)}`;
+        const shareText = `Check out my profile on SkillLinkr: ${shareUrl}`;
+        if (navigator.share) {
+            navigator.share({ title: 'My SkillLinkr Profile', text: shareText, url: shareUrl });
+        } else {
+            const action = window.confirm('Share on WhatsApp? (Cancel to copy link)');
+            if (action) {
+                window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+            } else {
+                navigator.clipboard.writeText(shareUrl);
+            }
+        }
+    };
+
     if (!email) return null;
 
     return (
@@ -123,9 +139,14 @@ export default function ProfilePage() {
                             <p className="text-xs text-muted-foreground">{email}</p>
                         </div>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={handleLogout} className="text-red-500 hover:text-red-600 hover:bg-red-500/10">
-                        <LogOut className="h-5 w-5" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" onClick={handleShareProfile} className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10" title="Share Profile">
+                            <Share2 className="h-5 w-5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={handleLogout} className="text-red-500 hover:text-red-600 hover:bg-red-500/10">
+                            <LogOut className="h-5 w-5" />
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Single page editor */}

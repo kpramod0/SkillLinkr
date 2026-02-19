@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { ArrowLeft, Users, Shield, UserPlus, FileText, Settings, Trash2, Check, X, Loader2, Share2 } from "lucide-react"
+import { ArrowLeft, Users, Shield, UserMinus, Trash2, Check, X, Settings, Share2, Loader2, MessageCircle } from "lucide-react"
 import { createClient } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -93,20 +93,27 @@ export default function TeamDashboard() {
             setUserId(currentUserId)
 
             // 1. Fetch Team Details
-            const resTeam = await fetch(`/api/teams/${teamId}`)
-            if (!resTeam.ok) throw new Error('Failed to fetch team')
+            const resTeam = await fetch(`/api/teams/${teamId}`, {
+                headers: { 'Content-Type': 'application/json' }
+            })
+            if (!resTeam.ok) throw new Error(`Failed to fetch team: ${resTeam.status}`)
             const teamData = await resTeam.json()
             setTeam(teamData)
             setFormData({
                 title: teamData.title,
                 description: teamData.description,
                 status: teamData.status,
-                roles_needed: teamData.roles_needed.join(', '),
-                skills_required: teamData.skills_required.join(', ')
+                roles_needed: (teamData.roles_needed || []).join(', '),
+                skills_required: (teamData.skills_required || []).join(', ')
             })
 
+            // Determine if current user is the creator (owner)
+            const isCreator = teamData.creator_id === currentUserId
+
             // 2. Fetch Members
-            const resMembers = await fetch(`/api/teams/${teamId}/members`)
+            const resMembers = await fetch(`/api/teams/${teamId}/members`, {
+                headers: { 'Content-Type': 'application/json' }
+            })
             let membersData: TeamMember[] = []
             if (resMembers.ok) {
                 membersData = await resMembers.json()
@@ -116,10 +123,11 @@ export default function TeamDashboard() {
             // Determine Current Role
             // Normalize: treat 'Leader', 'creator', and 'admin' all as admin
             const myMember = membersData.find((m: TeamMember) => m.user_id === currentUserId)
-            const isCreator = teamData.creator_id === currentUserId
             const adminRoles = ['admin', 'Leader', 'creator']
             const hasAdminRole = myMember && adminRoles.includes(myMember.role)
 
+            // CRITICAL: Always grant admin to the team creator, even if missing from team_members
+            // This handles: old teams before trigger, failed upserts, edge cases
             if (hasAdminRole || isCreator) {
                 setCurrentUserRole('admin')
             } else if (myMember) {
@@ -130,7 +138,9 @@ export default function TeamDashboard() {
 
             // 3. Fetch Applications (If Admin/Creator)
             if (hasAdminRole || isCreator) {
-                const resApps = await fetch(`/api/teams/${teamId}/applications`)
+                const resApps = await fetch(`/api/teams/${teamId}/applications`, {
+                    headers: { 'Content-Type': 'application/json' }
+                })
                 if (resApps.ok) setApplications(await resApps.json())
             }
 
@@ -152,6 +162,7 @@ export default function TeamDashboard() {
         try {
             const res = await fetch(`/api/teams/${teamId}/members`, {
                 method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, targetUserId, newRole: 'admin' })
             })
             if (!res.ok) throw new Error('Failed to promote')
@@ -167,7 +178,8 @@ export default function TeamDashboard() {
         if (!userId || !confirm("Are you sure you want to remove this member?")) return
         try {
             const res = await fetch(`/api/teams/${teamId}/members?userId=${userId}&targetUserId=${targetUserId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
             })
             if (!res.ok) throw new Error('Failed to remove')
 
@@ -183,6 +195,7 @@ export default function TeamDashboard() {
         try {
             const res = await fetch(`/api/teams/${teamId}/applications`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, applicationId, action, targetUserId: applicantId })
             })
             if (!res.ok) throw new Error(`Failed to ${action}`)
@@ -201,6 +214,7 @@ export default function TeamDashboard() {
         try {
             const res = await fetch(`/api/teams/${teamId}`, {
                 method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userId,
                     ...formData,
@@ -236,14 +250,39 @@ export default function TeamDashboard() {
         }
     }
 
+
     const handleShare = async () => {
-        if (!team) return
-        const url = window.location.href
+        if (!team || !userId) return
         try {
-            await navigator.clipboard.writeText(`${team.title} - Join my team on Collexa!\n\n${url}`)
-            toast({ title: "Link Copied", description: "Share this link with others to invite them." })
+            // Fetch invite token from API
+            const res = await fetch(`/api/teams/${teamId}/invite?userId=${encodeURIComponent(userId)}`, {
+                headers: { 'Content-Type': 'application/json' }
+            })
+            if (!res.ok) {
+                toast({ title: "Error", description: "Could not generate invite link", variant: "destructive" })
+                return
+            }
+            const { invite_token, team_title } = await res.json()
+            const origin = window.location.origin
+            const inviteUrl = `${origin}/join/team/${teamId}?token=${invite_token}`
+            const shareText = `🚀 Join my team *${team_title}* on SkillLinkr!\n\nClick the link to join directly:\n${inviteUrl}`
+
+            // Try Web Share API first (mobile)
+            if (navigator.share) {
+                await navigator.share({ title: `Join ${team_title}`, text: shareText, url: inviteUrl })
+            } else {
+                // Fallback: offer WhatsApp or copy
+                const action = window.confirm(`Share via WhatsApp? (Cancel to copy link)`);
+                if (action) {
+                    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
+                } else {
+                    await navigator.clipboard.writeText(inviteUrl)
+                    toast({ title: "✅ Invite Link Copied!", description: "Share this link with anyone to let them join directly." })
+                }
+            }
         } catch (err) {
-            toast({ title: "Error", description: "Failed to copy link", variant: "destructive" })
+            console.error('Share error:', err)
+            toast({ title: "Error", description: "Failed to generate invite link", variant: "destructive" })
         }
     }
 

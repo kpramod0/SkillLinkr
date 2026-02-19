@@ -10,17 +10,40 @@ function getSupabase() {
 }
 
 // Helper to check admin status
+// Returns true if user is a member with an admin role, OR if they are the original creator
 async function isTeamAdmin(teamId: string, userId: string) {
-    const { data, error } = await getSupabase()
+    const supabase = getSupabase();
+
+    // Check team_members table first
+    const { data: memberData } = await supabase
         .from('team_members')
         .select('role')
         .eq('team_id', teamId)
         .eq('user_id', userId)
         .single();
 
-    if (error || !data) return false;
-    // Accept various admin role names
-    return ['admin', 'Leader', 'creator'].includes(data.role);
+    if (memberData && ['admin', 'Leader', 'creator', 'member'].includes(memberData.role)) {
+        // Check if specifically admin role
+        if (['admin', 'Leader', 'creator'].includes(memberData.role)) return true;
+    }
+
+    // Fallback: Check if user is the team creator (for old teams without trigger)
+    const { data: teamData } = await supabase
+        .from('teams')
+        .select('creator_id')
+        .eq('id', teamId)
+        .single();
+
+    if (teamData && teamData.creator_id === userId) {
+        // Auto-repair: ensure creator is in team_members as admin
+        await supabase.from('team_members').upsert(
+            { team_id: teamId, user_id: userId, role: 'admin' },
+            { onConflict: 'team_id,user_id' }
+        );
+        return true;
+    }
+
+    return false;
 }
 
 export async function GET(
@@ -29,15 +52,12 @@ export async function GET(
 ) {
     try {
         const teamId = (await params).id;
+        const supabase = getSupabase();
 
-        const { data: team, error } = await getSupabase()
+        // Fetch team with creator profile (simple join - avoids potential alias issues)
+        const { data: team, error } = await supabase
             .from('teams')
-            .select(`
-                *,
-                creator: creator_id (
-                    id, first_name, last_name, photos, short_bio: bio
-                )
-            `)
+            .select('*')
             .eq('id', teamId)
             .single();
 
@@ -50,7 +70,26 @@ export async function GET(
             return NextResponse.json({ error: 'Team not found' }, { status: 404 });
         }
 
-        return NextResponse.json(team);
+        // Fetch creator profile separately to avoid FK join failures
+        let creator = null;
+        if (team.creator_id) {
+            const { data: creatorData } = await supabase
+                .from('profiles')
+                .select('id, first_name, last_name, photos, bio')
+                .eq('id', team.creator_id)
+                .single();
+            if (creatorData) {
+                creator = { ...creatorData, short_bio: creatorData.bio };
+            }
+        }
+
+        // Fetch member count
+        const { count } = await supabase
+            .from('team_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('team_id', teamId);
+
+        return NextResponse.json({ ...team, creator, member_count: count ?? 0 });
     } catch (e: any) {
         console.error('Critical error fetching team:', e);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
@@ -74,7 +113,7 @@ export async function PUT(
         return NextResponse.json({ error: 'Forbidden: Admin access only' }, { status: 403 });
     }
 
-    // Update
+    // Update (note: 'updated_at' column does not exist in schema, so excluded)
     const { data, error } = await getSupabase()
         .from('teams')
         .update({
@@ -83,7 +122,6 @@ export async function PUT(
             roles_needed,
             skills_required,
             status,
-            updated_at: new Date().toISOString()
         })
         .eq('id', teamId)
         .select()

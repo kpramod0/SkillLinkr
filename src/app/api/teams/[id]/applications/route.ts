@@ -119,13 +119,14 @@ export async function POST(
             // 2. Add to team_members
             const { error: memberError } = await supabase
                 .from('team_members')
-                .insert({
+                .upsert({
                     team_id: teamId,
                     user_id: targetUserId,
-                    role: 'Member'
-                });
+                    role: 'member'  // must be lowercase to match DB CHECK constraint
+                }, { onConflict: 'team_id,user_id' });
 
-            if (memberError && !memberError.message.includes('duplicate')) {
+            if (memberError) {
+                console.error('Error adding member to team:', memberError);
                 return NextResponse.json({ error: memberError.message }, { status: 500 });
             }
 
