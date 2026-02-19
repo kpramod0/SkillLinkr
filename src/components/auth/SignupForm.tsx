@@ -8,7 +8,7 @@ import { Mail, Lock, ArrowRight, Eye, EyeOff, GraduationCap, Briefcase, BookOpen
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { compressImage } from "@/lib/imageUtils"
+import { compressAvatar } from "@/lib/imageUtils"
 // Import Supabase Client
 import { supabase } from "@/lib/supabase"
 
@@ -24,22 +24,30 @@ export function SignupForm() {
     const [showPassword, setShowPassword] = useState(false)
     const [photoPreview, setPhotoPreview] = useState<string | null>(null)
     const [photoFile, setPhotoFile] = useState<File | null>(null)
+    const [compressingPhoto, setCompressingPhoto] = useState(false)
     const photoInputRef = useRef<HTMLInputElement>(null)
 
     const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
+        // Show instant preview from original file
+        const reader = new FileReader()
+        reader.onload = (ev) => setPhotoPreview(ev.target?.result as string)
+        reader.readAsDataURL(file)
+
+        setCompressingPhoto(true)
         try {
-            const compressed = await compressImage(file)
+            const compressed = await compressAvatar(file)
             setPhotoFile(compressed)
-            const reader = new FileReader()
-            reader.onload = (ev) => setPhotoPreview(ev.target?.result as string)
-            reader.readAsDataURL(compressed)
+            // Update preview with the compressed version
+            const compReader = new FileReader()
+            compReader.onload = (ev) => setPhotoPreview(ev.target?.result as string)
+            compReader.readAsDataURL(compressed)
         } catch {
+            // Compression failed — use original file
             setPhotoFile(file)
-            const reader = new FileReader()
-            reader.onload = (ev) => setPhotoPreview(ev.target?.result as string)
-            reader.readAsDataURL(file)
+        } finally {
+            setCompressingPhoto(false)
         }
     }
 
@@ -100,20 +108,22 @@ export function SignupForm() {
 
             if (error) throw error
 
-            // Upload photo if selected
-            if (photoFile) {
+            // Upload photo if selected.
+            // We wait 600ms after signUp so the Supabase DB trigger has time to create
+            // the profile row before we try to update it with the photo URL.
+            if (photoFile && data.user) {
                 try {
+                    await new Promise(r => setTimeout(r, 600))
                     const fd = new FormData()
                     fd.append('file', photoFile)
                     fd.append('userId', email)
                     await fetch('/api/upload', { method: 'POST', body: fd })
                 } catch {
-                    // Photo upload failed silently — user can add later
+                    // Photo upload failed silently — user can add/update later from their profile
                 }
             }
 
-            // Supabase sends the email automatically if configured
-            // We redirect to verify page to prompt them to check inbox/enter OTP if we are using OTP mode
+            // Redirect to email verification page
             router.push(`/verify?email=${encodeURIComponent(email)}`)
         } catch (err: any) {
             setError(err.message)
@@ -152,6 +162,8 @@ export function SignupForm() {
                         )}>
                             {photoPreview ? (
                                 <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                            ) : compressingPhoto ? (
+                                <div className="animate-spin h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full" />
                             ) : (
                                 <Camera className="h-7 w-7 text-muted-foreground group-hover:text-emerald-400 transition-colors" />
                             )}
@@ -163,7 +175,9 @@ export function SignupForm() {
                             </div>
                         )}
                     </label>
-                    <span className="text-xs text-muted-foreground">Profile photo <span className="text-muted-foreground/50">(optional)</span></span>
+                    <span className="text-xs text-muted-foreground">
+                        {compressingPhoto ? "Compressing…" : <>Profile photo <span className="text-muted-foreground/50">(optional)</span></>}
+                    </span>
                     <input
                         ref={photoInputRef}
                         type="file"

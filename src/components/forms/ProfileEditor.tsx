@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { UserProfile, Domain, PortfolioProject } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { compressImage } from "@/lib/imageUtils"
+import { compressAvatar, compressImage } from "@/lib/imageUtils"
 import { Save, User, Briefcase, Globe, Heart, Edit2, Check, X, Camera, Trash2, FolderGit2, Plus, ExternalLink, Upload, ChevronDown, ChevronUp, Star, Sparkles } from "lucide-react"
 import { SkillSelector } from "./SkillSelector"
 import { OpenToBadges } from "@/components/social/OpenToBadges"
@@ -40,6 +40,7 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
     const [successMessage, setSuccessMessage] = useState("")
     const [editingSection, setEditingSection] = useState<Section>(null) // Which section is currently expanding for edit
     const [uploadingPhoto, setUploadingPhoto] = useState(false)
+    const avatarInputRef = useRef<HTMLInputElement>(null)
 
     // --- Form Data State ---
     // Initialized with empty defaults, populated via useEffect
@@ -96,37 +97,56 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
         fetchProfile()
     }, [email])
 
-    // --- Handbook: Photo Upload ---
-    // Handles compressing and uploading user avatar images
+    // --- Handbook: Photo Upload / Replace Avatar ---
+    // Compresses and uploads a new avatar, replacing photos[0]
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
+        // Reset input so the same file can be re-selected later
+        e.target.value = ''
 
         setUploadingPhoto(true)
         try {
-            // 1. Client-side compression to save bandwidth/storage
-            const compressed = await compressImage(file)
+            // 1. Avatar-tuned compression (800px, quality 0.90)
+            const compressed = await compressAvatar(file)
 
-            // 2. Prepare FormData for API
+            // 2. Show optimistic local preview immediately
+            const blobUrl = URL.createObjectURL(compressed)
+            setFormData(prev => ({
+                ...prev,
+                visuals: {
+                    ...prev.visuals!,
+                    // Replace avatar (index 0), keep any gallery photos
+                    photos: [blobUrl, ...(prev.visuals?.photos || []).slice(1)]
+                }
+            }))
+
+            // 3. Prepare FormData and upload
             const fd = new FormData()
             fd.append('file', compressed)
             fd.append('userId', email)
 
-            // 3. Send to upload API
+            // 4. Send to upload API — replaces photos[0] in DB
             const res = await fetch('/api/upload', { method: 'POST', body: fd })
             if (res.ok) {
                 const data = await res.json()
-                // 4. Update local state with new image URL
-                setFormData(prev => ({
-                    ...prev,
-                    visuals: {
-                        ...prev.visuals!,
-                        photos: [...(prev.visuals?.photos || []), data.url]
-                    }
-                }))
+                if (data.url) {
+                    // Replace blob URL with permanent server URL
+                    setFormData(prev => ({
+                        ...prev,
+                        visuals: {
+                            ...prev.visuals!,
+                            photos: [data.url, ...(prev.visuals?.photos || []).slice(1)]
+                        }
+                    }))
+                    // Revoke blob after swap
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
+                }
+            } else {
+                console.error('[ProfileEditor] Upload failed')
             }
         } catch (err) {
-            console.error('Upload failed:', err)
+            console.error('Avatar upload failed:', err)
         } finally {
             setUploadingPhoto(false)
         }
@@ -139,7 +159,7 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
             await fetch('/api/upload', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url, userId: email })
+                body: JSON.stringify({ url, userId: email })  // use 'url' key (API accepts both)
             })
 
             // Update UI to remove the deleted photo
@@ -372,6 +392,63 @@ export function ProfileEditor({ email }: ProfileEditorProps) {
             {/* --- Section 1: Personal Info --- */}
             <section className="glass p-6 rounded-2xl space-y-4">
                 <SectionHeader title="Personal Details" icon={User} section="personal" />
+
+                {/* --- Avatar Photo Section (always visible, above Personal fields) --- */}
+                <div className="flex flex-col items-center gap-2 mb-4">
+                    {/* Hidden file input for avatar replace */}
+                    <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handlePhotoUpload}
+                        disabled={uploadingPhoto}
+                    />
+
+                    <div
+                        className="relative cursor-pointer group"
+                        onClick={() => !uploadingPhoto && avatarInputRef.current?.click()}
+                        title={uploadingPhoto ? "Uploading…" : "Click to change profile photo"}
+                    >
+                        {/* Avatar circle */}
+                        <div className="h-20 w-20 rounded-full overflow-hidden border-2 border-emerald-500/60 shadow-lg">
+                            {formData.visuals?.photos?.[0] ? (
+                                <img
+                                    src={formData.visuals.photos[0]}
+                                    alt="Profile avatar"
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="w-full h-full bg-emerald-500/10 flex items-center justify-center">
+                                    <Camera className="h-8 w-8 text-emerald-500/60" />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Pencil/camera overlay on hover */}
+                        <div className={cn(
+                            "absolute inset-0 rounded-full bg-black/50 flex items-center justify-center transition-opacity",
+                            uploadingPhoto ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        )}>
+                            {uploadingPhoto ? (
+                                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+                            ) : (
+                                <Camera className="h-5 w-5 text-white" />
+                            )}
+                        </div>
+
+                        {/* Small pencil badge */}
+                        {!uploadingPhoto && (
+                            <div className="absolute -bottom-0.5 -right-0.5 h-6 w-6 bg-emerald-500 rounded-full flex items-center justify-center shadow-md border-2 border-background">
+                                <Edit2 className="h-3 w-3 text-white" />
+                            </div>
+                        )}
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                        {uploadingPhoto ? "Uploading photo…" : "Click to change photo"}
+                    </p>
+                </div>
 
                 {editingSection === 'personal' ? (
                     // --- Edit Mode: Personal ---

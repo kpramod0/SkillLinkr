@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { compressImage } from "@/lib/imageUtils";
+import { compressAvatar } from "@/lib/imageUtils";
 import { LogOut, User as UserIcon, Camera, Edit2, X, Share2, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/components/forms/ProfileEditor";
@@ -26,7 +26,7 @@ export default function ProfilePage() {
         }
         setEmail(storedEmail);
 
-        fetch(`/api/profile?email=${encodeURIComponent(storedEmail)}`)
+        fetch(`/api/profile?email=${encodeURIComponent(storedEmail)}`, { cache: 'no-store' })
             .then(res => res.ok ? res.json() : null)
             .then(data => {
                 // Don't overwrite the display URL if the user is mid-upload
@@ -49,7 +49,7 @@ export default function ProfilePage() {
         setUploadingPhoto(true);
 
         try {
-            const compressed = await compressImage(file);
+            const compressed = await compressAvatar(file);
 
             const fd = new FormData();
             fd.append('file', compressed);
@@ -77,6 +77,7 @@ export default function ProfilePage() {
         } finally {
             uploadingRef.current = false;
             setUploadingPhoto(false);
+            // Reset input so the same file can be re-selected
             e.target.value = '';
         }
     };

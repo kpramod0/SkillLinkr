@@ -83,8 +83,9 @@ export async function POST(request: Request) {
             }
 
             const existingPhotos: string[] = profileRow?.photos || [];
-            // Replace entire array with just the new photo as index 0 (profile pic)
-            const updatedPhotos = [publicUrl, ...existingPhotos.slice(0, 4)];
+            // Replace avatar (index 0) with the new photo, keep remaining as gallery (max 5 total)
+            const gallery = existingPhotos.slice(1, 4); // keep non-avatar photos
+            const updatedPhotos = [publicUrl, ...gallery];
 
             const { error: updateError } = await sb
                 .from('profiles')
@@ -114,10 +115,12 @@ export async function POST(request: Request) {
 // DELETE: Remove file from storage and profile photos array
 export async function DELETE(request: Request) {
     try {
-        const { userId, photoUrl } = await request.json();
+        // Accept both `url` (ProfileEditor) and `photoUrl` (legacy) for backwards compatibility
+        const { userId, url, photoUrl: legacyPhotoUrl } = await request.json();
+        const photoUrl = url || legacyPhotoUrl;
 
         if (!photoUrl) {
-            return NextResponse.json({ error: 'photoUrl required' }, { status: 400 });
+            return NextResponse.json({ error: 'url required' }, { status: 400 });
         }
 
         const sb = getSupabase();

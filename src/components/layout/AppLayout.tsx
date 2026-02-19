@@ -50,19 +50,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     onMouseLeave={() => setSidebarExpanded(false)}
                     className={cn(
                         "h-full border-r bg-background flex flex-col py-6 transition-all duration-300 ease-in-out shrink-0 z-20",
-                        sidebarExpanded ? "w-56" : "w-[72px]"
+                        sidebarExpanded ? "w-72" : "w-[124px]"
                     )}
                 >
                     {/* Logo */}
-                    <div className="px-4 mb-8">
+                    <div className="px-2 mb-8 flex justify-center">
                         <Link href="/main/discover" className="flex items-center gap-3 group">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <div className="h-10 w-14 rounded-lg overflow-hidden shrink-0 flex items-center justify-center">
+                            <div className="h-[106px] w-[106px] rounded-full shadow-md overflow-hidden shrink-0 flex items-center justify-center bg-background">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                    src="/logo_icon.png"
+                                    src="/logo1.png"
                                     alt="SkillLinkr Logo"
-                                    className="w-14 h-auto object-cover object-center"
-                                    style={{ marginTop: '-15%', marginBottom: '-15%' }}
+                                    width={106}
+                                    height={106}
+                                    className="w-full h-full object-cover scale-125 transform transition-transform translate-y-1.5"
                                 />
                             </div>
                             <span className={cn(
