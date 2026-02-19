@@ -345,20 +345,16 @@ export function SwipeDeck() {
         <div className="flex flex-col h-full w-full md:max-w-sm mx-auto relative overflow-hidden">
 
             {/* Header: Toggle | Count */}
-            <div className="absolute top-6 left-0 right-0 z-50 flex items-center justify-between px-4 pointer-events-none">
+            <div className="absolute top-6 left-0 right-0 z-50 flex items-center px-4 pointer-events-none gap-3">
 
-                <div className="w-12 pointer-events-auto">
-                    {/* Left spacer or back? */}
-                </div>
-
-                {/* Center: Toggle */}
+                {/* Toggle — slightly left, not centered */}
                 <div className="flex-shrink-0 pointer-events-auto">
                     <DiscoveryToggle mode={mode} onChange={(m) => setMode(m as any)} />
                 </div>
 
-                {/* Right: Member Count (Only for Discover Teams) */}
-                <div className="w-12 flex justify-end pointer-events-auto">
-                    {mode === 'teams' && discoverableTeams.length > 0 && (
+                {/* Member Count — right next to toggle, only in Teams mode */}
+                {mode === 'teams' && discoverableTeams.length > 0 && (
+                    <div className="pointer-events-auto">
                         <button
                             onClick={() => setIsMembersModalOpen(true)}
                             className="bg-background/80 backdrop-blur-md border rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-background transition-colors text-xs font-medium"
@@ -368,8 +364,8 @@ export function SwipeDeck() {
                                 {discoverableTeams[discoverableTeams.length - 1]?.members?.length || 1}
                             </span>
                         </button>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* Content Area */}

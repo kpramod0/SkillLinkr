@@ -21,7 +21,11 @@ export const metadata: Metadata = {
   // 2. The description used for SEO and social sharing previews
   description: "Connect with SkillLinkr students",
 
-
+  // 3. Favicon / tab icon — using our custom logo
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({

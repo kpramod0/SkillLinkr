@@ -82,8 +82,6 @@ export function TeamCard({ team, onSwipe, onClick, style, exitDirection, current
                 {/* Header Image / Pattern - Percentage Height */}
                 <div className="h-[35%] w-full bg-gradient-to-br from-indigo-600 to-purple-700 relative p-6 flex flex-col justify-end shrink-0">
                     <div className="absolute top-4 right-4 bg-black/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium text-white flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {team.members?.length || 1} Member{team.members?.length !== 1 && 's'}
                     </div>
 
                     <h2 className="text-2xl font-bold text-white mb-1 leading-tight line-clamp-2">{team.title}</h2>

@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { Mail, Lock, ArrowRight, Eye, EyeOff, GraduationCap, Briefcase, BookOpen } from "lucide-react"
+import { Mail, Lock, ArrowRight, Eye, EyeOff, GraduationCap, Briefcase, BookOpen, Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { compressImage } from "@/lib/imageUtils"
 // Import Supabase Client
 import { supabase } from "@/lib/supabase"
 
@@ -21,6 +22,26 @@ export function SignupForm() {
     const [error, setError] = useState("")
     const [devOtp, setDevOtp] = useState("")
     const [showPassword, setShowPassword] = useState(false)
+    const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+    const [photoFile, setPhotoFile] = useState<File | null>(null)
+    const photoInputRef = useRef<HTMLInputElement>(null)
+
+    const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        try {
+            const compressed = await compressImage(file)
+            setPhotoFile(compressed)
+            const reader = new FileReader()
+            reader.onload = (ev) => setPhotoPreview(ev.target?.result as string)
+            reader.readAsDataURL(compressed)
+        } catch {
+            setPhotoFile(file)
+            const reader = new FileReader()
+            reader.onload = (ev) => setPhotoPreview(ev.target?.result as string)
+            reader.readAsDataURL(file)
+        }
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -79,6 +100,18 @@ export function SignupForm() {
 
             if (error) throw error
 
+            // Upload photo if selected
+            if (photoFile) {
+                try {
+                    const fd = new FormData()
+                    fd.append('file', photoFile)
+                    fd.append('userId', email)
+                    await fetch('/api/upload', { method: 'POST', body: fd })
+                } catch {
+                    // Photo upload failed silently — user can add later
+                }
+            }
+
             // Supabase sends the email automatically if configured
             // We redirect to verify page to prompt them to check inbox/enter OTP if we are using OTP mode
             router.push(`/verify?email=${encodeURIComponent(email)}`)
@@ -104,6 +137,42 @@ export function SignupForm() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+
+                {/* Profile Photo Upload — optional */}
+                <div className="flex flex-col items-center gap-2 mb-2">
+                    <label
+                        className="relative cursor-pointer group"
+                        onClick={() => photoInputRef.current?.click()}
+                    >
+                        <div className={cn(
+                            "h-20 w-20 rounded-full border-2 border-dashed flex items-center justify-center transition-all duration-200 overflow-hidden",
+                            photoPreview
+                                ? "border-emerald-500"
+                                : "border-white/20 bg-white/5 hover:border-emerald-500/60 hover:bg-white/10"
+                        )}>
+                            {photoPreview ? (
+                                <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                            ) : (
+                                <Camera className="h-7 w-7 text-muted-foreground group-hover:text-emerald-400 transition-colors" />
+                            )}
+                        </div>
+                        {/* Camera overlay on hover when photo exists */}
+                        {photoPreview && (
+                            <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Camera className="h-5 w-5 text-white" />
+                            </div>
+                        )}
+                    </label>
+                    <span className="text-xs text-muted-foreground">Profile photo <span className="text-muted-foreground/50">(optional)</span></span>
+                    <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handlePhotoSelect}
+                    />
+                </div>
+
                 {/* Role Selection */}
                 <div className="space-y-2">
                     <label className="text-sm font-medium text-muted-foreground">I am a</label>
