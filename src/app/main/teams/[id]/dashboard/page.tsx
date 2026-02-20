@@ -85,24 +85,32 @@ export default function TeamDashboard() {
         if (!teamId) return
 
         try {
-            // Get current user identity
+            // Get BOTH email (from localStorage) and UUID (from Supabase Auth session)
+            // because creator_id / team_members.user_id in DB may be either format.
             const localEmail = localStorage.getItem("user_email")
-            let currentUserId = localEmail
 
-            if (!currentUserId) {
-                const { data: { user } } = await supabase.auth.getUser()
-                currentUserId = user?.email || user?.id || null
-            }
+            const { data: sessionData } = await supabase.auth.getSession()
+            const supabaseUser = sessionData?.session?.user
+            const supabaseUUID = supabaseUser?.id || null
+            const supabaseEmail = supabaseUser?.email || null
 
-            if (!currentUserId) {
+            // Collect all possible identifiers for the current user
+            const userIds = new Set<string>(
+                [localEmail, supabaseUUID, supabaseEmail].filter(Boolean) as string[]
+            )
+
+            // Primary userId for API calls (UUID preferred, fallback to email)
+            const primaryUserId = supabaseUUID || localEmail
+
+            if (!primaryUserId) {
                 router.push('/login')
                 return
             }
-            setUserId(currentUserId)
+            setUserId(primaryUserId)
 
             const authHeaders = await getAuthHeaders()
 
-            // 1. Fetch team - this also triggers auto-repair for creator
+            // 1. Fetch team — triggers auto-repair so creator is in team_members
             const teamRes = await fetch(`/api/teams/${teamId}`, { headers: authHeaders })
             if (!teamRes.ok) throw new Error('Team not found')
             const teamData = await teamRes.json()
@@ -115,15 +123,17 @@ export default function TeamDashboard() {
                 skills_required: (teamData.skills_required || []).join(', ')
             })
 
-            // 2. Fetch members via Admin API
+            // isCreator: true if any of the user's identifiers match the team's creator_id
+            const isCreator = !!teamData.creator_id && userIds.has(teamData.creator_id)
+
+            // 2. Fetch members
             const membersRes = await fetch(`/api/teams/${teamId}/members`, { headers: authHeaders })
             if (membersRes.ok) {
                 const membersData = await membersRes.json()
                 setMembers(membersData)
 
-                // Determine current user's role
-                const myMember = membersData.find((m: any) => m.user_id === currentUserId)
-                const isCreator = teamData.creator_id === currentUserId
+                // Match member row against any known user ID (UUID or email)
+                const myMember = membersData.find((m: any) => userIds.has(m.user_id))
 
                 if (isCreator || (myMember && ['admin', 'Leader', 'creator'].includes(myMember.role))) {
                     setCurrentUserRole('admin')
@@ -136,9 +146,15 @@ export default function TeamDashboard() {
                     }
                 } else if (myMember) {
                     setCurrentUserRole('member')
+                } else if (isCreator) {
+                    // Creator may not be in member list yet (auto-repair in-flight); grant admin access anyway
+                    setCurrentUserRole('admin')
                 } else {
                     setCurrentUserRole(null)
                 }
+            } else if (isCreator) {
+                // Members API failed, but user is confirmed creator — still grant admin access
+                setCurrentUserRole('admin')
             }
 
         } catch (error) {
@@ -148,6 +164,7 @@ export default function TeamDashboard() {
             setIsLoading(false)
         }
     }, [teamId, router, toast, getAuthHeaders])
+
 
 
     useEffect(() => {
