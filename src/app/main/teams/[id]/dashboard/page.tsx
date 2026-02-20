@@ -80,47 +80,29 @@ export default function TeamDashboard() {
             : { 'Content-Type': 'application/json' }
     }, [])
 
-    // Fetch all dashboard data. Sequentially: team → members → applications.
+    // Fetch all dashboard data. The app uses EMAIL as the user identifier (not UUID).
+    // creator_id and team_members.user_id in the DB store the user's email address.
     const fetchData = useCallback(async () => {
         if (!teamId) return
 
         try {
-            // --- Step 1: Resolve the current user's UUID via Supabase Auth ---
-            // getSession() reads from local cache (may be null on prod first load with PKCE)
-            // getUser() makes a live network call and is always authoritative.
-            const { data: sessionData } = await supabase.auth.getSession()
-            let currentUser = sessionData?.session?.user
+            // PRIMARY identity = email stored in localStorage (matches what's in DB)
+            const currentUserEmail = localStorage.getItem('user_email')
 
-            if (!currentUser) {
-                const { data: userData } = await supabase.auth.getUser()
-                currentUser = userData?.user ?? undefined
-            }
-
-            const supabaseUUID = currentUser?.id ?? null
-            const supabaseEmail = currentUser?.email ?? null
-            const localEmail = localStorage.getItem('user_email')
-
-            // All possible identifiers this user may appear as in the DB
-            const myIds = new Set<string>(
-                [supabaseUUID, supabaseEmail, localEmail].filter(Boolean) as string[]
-            )
-
-            // Primary ID to pass to API routes (should be UUID for DB ops)
-            const primaryId = supabaseUUID || localEmail
-            if (!primaryId) {
+            if (!currentUserEmail) {
                 router.push('/login')
                 return
             }
-            setUserId(primaryId)
+            setUserId(currentUserEmail)
 
             const authHeaders = await getAuthHeaders()
 
-            // --- Step 2: Fetch team data (also triggers auto-repair of creator in team_members) ---
+            // --- Step 1: Fetch team (also auto-repairs creator in team_members) ---
             const teamRes = await fetch(`/api/teams/${teamId}`, { headers: authHeaders })
             if (!teamRes.ok) {
                 const errText = await teamRes.text().catch(() => '')
                 console.error(`[Dashboard] Team fetch failed (${teamRes.status}):`, errText)
-                throw new Error(`Team not found or server error: ${teamRes.status}`)
+                throw new Error(`Team fetch failed: ${teamRes.status}`)
             }
             const teamData = await teamRes.json()
             setTeam(teamData)
@@ -132,23 +114,22 @@ export default function TeamDashboard() {
                 skills_required: (teamData.skills_required || []).join(', ')
             })
 
-            // Check if current user is the creator
-            const isCreator = !!teamData.creator_id && myIds.has(teamData.creator_id)
+            // creator_id stores email → direct comparison works
+            const isCreator = teamData.creator_id === currentUserEmail
 
-            // --- Step 3: Fetch members (API auto-repairs missing creator) ---
+            // --- Step 2: Fetch members (auto-repairs missing creator) ---
             const membersRes = await fetch(`/api/teams/${teamId}/members`, { headers: authHeaders })
             if (!membersRes.ok) {
-                const errText = await membersRes.text().catch(() => '')
-                console.error(`[Dashboard] Members fetch failed (${membersRes.status}):`, errText)
+                console.error(`[Dashboard] Members fetch failed (${membersRes.status})`)
             }
             const membersData: any[] = membersRes.ok ? await membersRes.json() : []
             setMembers(membersData)
 
-            // Find current user's row in team_members (matching by any known ID)
-            const myMemberRow = membersData.find((m: any) => myIds.has(m.user_id))
+            // team_members.user_id also stores email — direct comparison
+            const myMemberRow = membersData.find((m: any) => m.user_id === currentUserEmail)
             const isAdminRole = myMemberRow && ['admin', 'Leader', 'creator'].includes(myMemberRow.role)
 
-            // --- Step 4: Determine role ---
+            // --- Step 3: Determine role ---
             let resolvedRole: 'admin' | 'member' | null = null
             if (isCreator || isAdminRole) {
                 resolvedRole = 'admin'
@@ -157,12 +138,11 @@ export default function TeamDashboard() {
             }
             setCurrentUserRole(resolvedRole)
 
-            // --- Step 5: Fetch applications if admin ---
+            // --- Step 4: Fetch applications if admin ---
             if (resolvedRole === 'admin') {
                 const appsRes = await fetch(`/api/teams/${teamId}/applications`, { headers: authHeaders })
                 if (appsRes.ok) {
-                    const appsData = await appsRes.json()
-                    setApplications(appsData)
+                    setApplications(await appsRes.json())
                 } else {
                     console.warn('[Dashboard] Applications fetch failed:', appsRes.status)
                     setApplications([])
@@ -176,6 +156,7 @@ export default function TeamDashboard() {
             setIsLoading(false)
         }
     }, [teamId, router, toast, getAuthHeaders])
+
 
 
 
