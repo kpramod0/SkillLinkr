@@ -24,62 +24,65 @@ async function enrichTeams(teams: any[]): Promise<any[]> {
     if (!teams || teams.length === 0) return [];
 
     const teamIds = teams.map((t) => t.id);
-    const creatorIds = [...new Set(teams.map((t) => t.creator_id).filter(Boolean))];
 
-    // 1) Fetch all creator profiles
-    const { data: creatorProfiles } = await supabaseAdmin
-        .from('profiles')
-        .select('id, first_name, last_name, photos, bio')
-        .in('id', creatorIds);
-
-    const creatorMap = new Map(((creatorProfiles || []) as any[]).map((p: any) => [p.id, p]));
-
-    // 2) Fetch all members with their profiles for these teams
-    // Note: creator IS in team_members, but we want to return them separately in the UI
-    const { data: allMembers } = await supabaseAdmin
+    // 1) Fetch all member records (regardless of profile) for accurate counting
+    const { data: rawMembers } = await supabaseAdmin
         .from('team_members')
-        .select(`
-            team_id,
-            user_id,
-            role,
-            user:profiles!team_members_user_id_fkey (
-                id,
-                first_name,
-                last_name,
-                photos,
-                bio,
-                branch,
-                year,
-                domains,
-                skills,
-                open_to
-            )
-        `)
+        .select('team_id, user_id, role')
         .in('team_id', teamIds);
 
-    // Group members by team, excluding the creator from the "members" array to avoid double-listing in UI
+    // 2) Get all unique user IDs involved (creators + members)
+    const involvedUserIds = new Set<string>();
+    teams.forEach(t => { if (t.creator_id) involvedUserIds.add(t.creator_id); });
+    (rawMembers || []).forEach(m => { if (m.user_id) involvedUserIds.add(m.user_id); });
+
+    // 3) Fetch profiles for ALL involved users
+    const { data: allProfiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, first_name, last_name, photos, bio, branch, year, domains, skills, open_to')
+        .in('id', Array.from(involvedUserIds));
+
+    const profileMap = new Map(((allProfiles || []) as any[]).map((p: any) => [p.id, p]));
+
+    // Helper to get or synthesize profile
+    const getProfile = (userId: string, isLead: boolean = false) => {
+        const p = profileMap.get(userId);
+        if (p) return p;
+        return {
+            id: userId,
+            first_name: userId.split('@')[0],
+            last_name: isLead ? '(Lead)' : '(Member)',
+            photos: [],
+            bio: isLead ? 'Team Creator' : 'Team Member'
+        };
+    };
+
+    // 4) Map members to teams
     const teamMembersMap = new Map<string, any[]>();
-    const countMap = new Map<string, number>();
+    const teamUsersSetMap = new Map<string, Set<string>>();
 
-    (allMembers || []).forEach((m: any) => {
+    (rawMembers || []).forEach((m: any) => {
         const tid = String(m.team_id);
+        const uid = m.user_id;
 
-        // Always increment the total count (includes creator)
-        countMap.set(tid, (countMap.get(tid) || 0) + 1);
+        // Track unique users for counting
+        if (!teamUsersSetMap.has(tid)) teamUsersSetMap.set(tid, new Set());
+        teamUsersSetMap.get(tid)?.add(uid);
 
         // Find the team to check who the creator is
         const team = teams.find(t => String(t.id) === tid);
 
-        // Add to members list ONLY if they are NOT the creator
-        if (team && m.user_id !== team.creator_id) {
+        // Add to members list ONLY if they are NOT the creator (modal handles creator separately)
+        if (team && uid !== team.creator_id) {
             if (!teamMembersMap.has(tid)) teamMembersMap.set(tid, []);
+            const profile = getProfile(uid, false);
             teamMembersMap.get(tid)?.push({
                 user: {
-                    ...m.user,
+                    ...profile,
                     professionalDetails: {
-                        role: m.user?.domains?.[0] || 'Member',
-                        domains: m.user?.domains || [],
-                        skills: m.user?.skills || []
+                        role: profile.domains?.[0] || 'Member',
+                        domains: profile.domains || [],
+                        skills: profile.skills || []
                     }
                 }
             });
@@ -88,27 +91,18 @@ async function enrichTeams(teams: any[]): Promise<any[]> {
 
     return teams.map((team) => {
         const tid = String(team.id);
-        let cp = creatorMap.get(team.creator_id);
+        const cid = team.creator_id;
 
-        // Fallback: If creator profile is missing, synthesize a basic one
-        if (!cp) {
-            cp = {
-                id: team.creator_id,
-                first_name: team.creator_id.split('@')[0],
-                last_name: '(Lead)',
-                photos: [],
-                bio: 'Team Creator'
-            };
-        }
+        // Ensure creator is in the set for counting
+        if (!teamUsersSetMap.has(tid)) teamUsersSetMap.set(tid, new Set());
+        if (cid) teamUsersSetMap.get(tid)?.add(cid);
 
-        // Robust member count:
-        // Use countMap (from team_members table), but ensure it's at least 1
-        const countFromMembers = countMap.get(tid) || 0;
-        const finalCount = countFromMembers > 0 ? countFromMembers : 1;
+        const finalCount = teamUsersSetMap.get(tid)?.size || 1;
+        const cp = getProfile(cid, true);
 
         return {
             ...team,
-            creator: cp ? { ...cp, short_bio: cp.bio || cp.short_bio } : null,
+            creator: cp ? { ...cp, short_bio: cp.bio || cp.short_bio || '' } : null,
             member_count: finalCount,
             members: teamMembersMap.get(tid) || [],
         };

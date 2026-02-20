@@ -42,23 +42,33 @@ export async function GET(
         const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
 
         const membersWithProfiles = members.map((member: any) => {
-            const profile: any = profileMap.get(member.user_id);
+            const uid = member.user_id;
+            const profile: any = profileMap.get(uid);
+
+            if (profile) {
+                return {
+                    ...member,
+                    profiles: {
+                        id: profile.id,
+                        first_name: profile.first_name || '',
+                        last_name: profile.last_name || '',
+                        email: profile.id,
+                        photos: profile.photos || [],
+                        headline: profile.bio || ''
+                    }
+                };
+            }
+
+            // Fallback Synthesis: Use email/ID as name
             return {
                 ...member,
-                profiles: profile ? {
-                    id: profile.id,
-                    first_name: profile.first_name || '',
-                    last_name: profile.last_name || '',
-                    email: profile.id,
-                    photos: profile.photos || [],
-                    headline: profile.bio || ''
-                } : {
-                    id: member.user_id,
-                    first_name: member.user_id.split('@')[0],
-                    last_name: '',
-                    email: member.user_id,
+                profiles: {
+                    id: uid,
+                    first_name: uid.split('@')[0],
+                    last_name: '(Member)',
+                    email: uid,
                     photos: [],
-                    headline: ''
+                    headline: 'Team Member'
                 }
             };
         });
