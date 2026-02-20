@@ -361,21 +361,19 @@ export function SwipeDeck() {
     if (loading || contextLoading) return <div className="flex h-full items-center justify-center">Loading...</div>
 
     return (
-        <div className="flex flex-col h-full w-full md:max-w-sm mx-auto relative overflow-hidden">
+        <div className="relative h-full w-full max-w-[calc(100%-24px)] md:max-w-sm mx-auto my-3 md:my-0 overflow-hidden rounded-2xl">
 
-            {/* Header: Toggle (centered) + Count (right, only in Teams mode) */}
-            <div className="pt-6 px-4 z-50 flex items-center justify-between pointer-events-none relative shrink-0">
-                {/* Placeholder for left spacing to keep toggle centered */}
-                <div className="w-10 h-10 lg:w-16" />
+            {/* Header: Toggle (centered) + Count (right, only in Teams mode) Overlay */}
+            <div className="absolute top-6 left-0 right-0 px-4 z-50 flex items-center gap-2 pointer-events-none">
 
-                {/* Toggle — centered */}
-                <div className="flex-shrink-0 pointer-events-auto">
+                {/* Toggle — fills available space, scales to card width */}
+                <div className="flex-1 pointer-events-auto">
                     <DiscoveryToggle mode={mode} onChange={(m) => setMode(m as any)} />
                 </div>
 
-                {/* Member Count — right side */}
-                <div className="w-10 h-10 lg:w-16 flex justify-end pointer-events-auto">
-                    {mode === 'teams' && discoverableTeams.length > 0 && (
+                {/* Member Count — right side, only in Teams mode */}
+                {mode === 'teams' && discoverableTeams.length > 0 && (
+                    <div className="pointer-events-auto shrink-0">
                         <button
                             onClick={() => setIsMembersModalOpen(true)}
                             className="bg-background/80 backdrop-blur-md border rounded-full px-2 py-1.5 flex items-center gap-1.5 shadow-sm hover:bg-background transition-all active:scale-95 text-[10px] font-medium"
@@ -385,14 +383,14 @@ export function SwipeDeck() {
                                 {discoverableTeams[discoverableTeams.length - 1]?.members?.length || 1}
                             </span>
                         </button>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 relative w-full h-full min-h-0">
+            {/* Content Area — Full Height Cards background */}
+            <div className="absolute inset-0 z-10">
                 {mode === 'my-teams' ? (
-                    <div className="absolute inset-0 pt-4 px-4 overflow-y-auto pb-24 bg-background/50 backdrop-blur-sm z-40">
+                    <div className="absolute inset-0 pt-28 px-4 overflow-y-auto pb-24 bg-background/50 backdrop-blur-sm z-40 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-lg font-bold">My Teams</h2>
                             <Button

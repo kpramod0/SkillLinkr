@@ -56,7 +56,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     {/* Logo */}
                     <div className="px-2 mb-8 flex justify-center">
                         <Link href="/main/discover" className="flex items-center gap-3 group">
-                            <div className="h-[106px] w-[106px] rounded-full shadow-md overflow-hidden shrink-0 flex items-center justify-center bg-background">
+                            <div className="h-[106px] w-[106px] rounded-xl shadow-md overflow-hidden shrink-0 flex items-center justify-center bg-background">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                     src="/logo1.png?v=2"
@@ -168,7 +168,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Top Bar */}
                 <header className={cn(
-                    "h-24 pt-12 pb-4 px-4 items-center justify-center border-b bg-background/80 backdrop-blur-md z-10 sticky top-0 relative",
+                    "h-16 pt-6 pb-2 px-4 items-center justify-center border-b bg-background/80 backdrop-blur-md z-10 sticky top-0 relative",
                     isChatOpen ? "hidden md:flex" : "flex"
                 )}>
                     <div className="absolute left-4 flex items-center gap-2">
@@ -203,13 +203,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </header>
 
                 {/* Main Content */}
-                <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden relative [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                     {children}
                 </main>
 
                 {/* Bottom Navigation */}
                 <nav className={cn(
-                    "h-28 border-t bg-background/80 backdrop-blur-md pb-12 pt-4 px-6 items-center justify-between z-10",
+                    "h-20 border-t bg-background/80 backdrop-blur-md pb-6 pt-4 px-6 items-center justify-between z-10",
                     isChatOpen ? "hidden md:flex" : "flex"
                 )}>
                     {navItems.map((item) => {
