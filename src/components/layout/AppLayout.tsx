@@ -169,7 +169,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Top Bar */}
                 <header className={cn(
-                    "h-16 pt-6 pb-2 px-4 items-center justify-center border-b bg-background/80 backdrop-blur-md z-10 sticky top-0 relative",
+                    "h-16 pt-6 pb-2 px-4 items-center justify-center border-b bg-background/80 backdrop-blur-md z-[1000] sticky top-0 relative",
                     isChatOpen ? "hidden md:flex" : "flex"
                 )}>
                     <div className="absolute left-4 flex items-center gap-2">
@@ -213,7 +213,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Bottom Navigation */}
                 <nav className={cn(
-                    "h-20 border-t bg-background/80 backdrop-blur-md pb-6 pt-4 px-6 items-center justify-between z-10",
+                    "h-20 border-t bg-background/80 backdrop-blur-md pb-6 pt-4 px-6 items-center justify-between z-50",
                     isChatOpen ? "hidden md:flex" : "flex"
                 )}>
                     {navItems.map((item) => {

@@ -109,7 +109,7 @@ export function FilterDialog() {
             <Button
                 variant={isOpen ? "outline" : "ghost"}
                 size="icon"
-                className="rounded-full relative z-[60]"
+                className="rounded-full relative z-[1001]"
                 onClick={() => setIsOpen(!isOpen)}
             >
                 {isOpen ? <X className="h-5 w-5" /> : <SlidersHorizontal className="h-5 w-5" />}
@@ -118,7 +118,7 @@ export function FilterDialog() {
             {/* Backdrop for mobile closing */}
             {isOpen && (
                 <div
-                    className="fixed inset-0 z-[60]"
+                    className="fixed inset-0 z-[1000] bg-background/60 backdrop-blur-sm"
                     onClick={() => setIsOpen(false)}
                 />
             )}
@@ -127,8 +127,8 @@ export function FilterDialog() {
             <div
                 ref={dialogRef}
                 className={cn(
-                    "absolute right-0 top-12 w-80 p-6 bg-slate-900 dark:bg-slate-800 rounded-2xl shadow-2xl transition-all duration-200 z-[70] border border-slate-700 origin-top-right",
-                    isOpen ? "opacity-100 scale-100 visible" : "opacity-0 scale-95 invisible"
+                    "fixed lg:absolute inset-x-8 lg:inset-x-auto lg:right-0 top-4 lg:top-12 w-auto lg:w-80 p-6 bg-slate-900 dark:bg-slate-800 rounded-2xl shadow-2xl transition-all duration-200 z-[1002] border border-slate-700 origin-top lg:origin-top-right",
+                    isOpen ? "opacity-100 scale-100 translate-y-0 visible" : "opacity-0 scale-95 -translate-y-4 invisible"
                 )}>
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="font-bold text-lg">Discovery Settings</h3>
