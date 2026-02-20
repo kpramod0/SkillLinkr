@@ -20,17 +20,13 @@ async function requireAuthEmail(req: Request): Promise<string | null> {
     return data.user.email;
 }
 
-/**
- * Enriches an array of raw team rows with creator profile + member count.
- * Uses supabaseAdmin to bypass RLS. Completely avoids PostgREST FK joins.
- */
 async function enrichTeams(teams: any[]): Promise<any[]> {
     if (!teams || teams.length === 0) return [];
 
     const teamIds = teams.map((t) => t.id);
     const creatorIds = [...new Set(teams.map((t) => t.creator_id).filter(Boolean))];
 
-    // Fetch all creator profiles in one query
+    // 1) Fetch all creator profiles
     const { data: creatorProfiles } = await supabaseAdmin
         .from('profiles')
         .select('id, first_name, last_name, photos, bio')
@@ -38,27 +34,83 @@ async function enrichTeams(teams: any[]): Promise<any[]> {
 
     const creatorMap = new Map(((creatorProfiles || []) as any[]).map((p: any) => [p.id, p]));
 
-    // Fetch member counts for all teams in one query
-    const { data: memberCounts } = await supabaseAdmin
+    // 2) Fetch all members with their profiles for these teams
+    // Note: creator IS in team_members, but we want to return them separately in the UI
+    const { data: allMembers } = await supabaseAdmin
         .from('team_members')
-        .select('team_id')
+        .select(`
+            team_id,
+            user_id,
+            role,
+            user:profiles!team_members_user_id_fkey (
+                id,
+                first_name,
+                last_name,
+                photos,
+                bio,
+                branch,
+                year,
+                domains,
+                skills,
+                open_to
+            )
+        `)
         .in('team_id', teamIds);
 
-    // Count per team — stringify IDs to avoid integer vs string key mismatch
+    // Group members by team, excluding the creator from the "members" array to avoid double-listing in UI
+    const teamMembersMap = new Map<string, any[]>();
     const countMap = new Map<string, number>();
-    (memberCounts || []).forEach((row: any) => {
-        const key = String(row.team_id);
-        countMap.set(key, (countMap.get(key) || 0) + 1);
+
+    (allMembers || []).forEach((m: any) => {
+        const tid = String(m.team_id);
+
+        // Always increment the total count (includes creator)
+        countMap.set(tid, (countMap.get(tid) || 0) + 1);
+
+        // Find the team to check who the creator is
+        const team = teams.find(t => String(t.id) === tid);
+
+        // Add to members list ONLY if they are NOT the creator
+        if (team && m.user_id !== team.creator_id) {
+            if (!teamMembersMap.has(tid)) teamMembersMap.set(tid, []);
+            teamMembersMap.get(tid)?.push({
+                user: {
+                    ...m.user,
+                    professionalDetails: {
+                        role: m.user?.domains?.[0] || 'Member',
+                        domains: m.user?.domains || [],
+                        skills: m.user?.skills || []
+                    }
+                }
+            });
+        }
     });
 
     return teams.map((team) => {
-        const cp = creatorMap.get(team.creator_id);
+        const tid = String(team.id);
+        let cp = creatorMap.get(team.creator_id);
+
+        // Fallback: If creator profile is missing, synthesize a basic one
+        if (!cp) {
+            cp = {
+                id: team.creator_id,
+                first_name: team.creator_id.split('@')[0],
+                last_name: '(Lead)',
+                photos: [],
+                bio: 'Team Creator'
+            };
+        }
+
+        // Robust member count:
+        // Use countMap (from team_members table), but ensure it's at least 1
+        const countFromMembers = countMap.get(tid) || 0;
+        const finalCount = countFromMembers > 0 ? countFromMembers : 1;
+
         return {
             ...team,
-            creator: cp ? { ...cp, short_bio: cp.bio } : null,
-            member_count: countMap.get(String(team.id)) || 0,
-            // Keep members array shape for backward compat but use count
-            members: Array(countMap.get(String(team.id)) || 0).fill({}),
+            creator: cp ? { ...cp, short_bio: cp.bio || cp.short_bio } : null,
+            member_count: finalCount,
+            members: teamMembersMap.get(tid) || [],
         };
     });
 }
