@@ -9,6 +9,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 import { MatchRequestsSidebar } from "@/components/social/MatchRequestsSidebar";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { FilterDialog } from "@/components/social/FilterDialog";
 import { useRealtime } from "@/context/RealtimeContext";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -185,6 +186,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         </span>
                     </div>
                     <div className="absolute right-4 flex items-center gap-3">
+                        {/* Filters (Mobile Header - Only on Discover) */}
+                        {pathname === '/main/discover' && <FilterDialog />}
+
                         {/* Notifications (Mobile Header) */}
                         <NotificationBell />
 
