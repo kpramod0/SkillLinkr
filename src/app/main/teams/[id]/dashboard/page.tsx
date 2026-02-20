@@ -80,116 +80,103 @@ export default function TeamDashboard() {
             : { 'Content-Type': 'application/json' }
     }, [])
 
-    // Fetch Data - uses Supabase directly for reliability, avoids API chain issues
+    // Fetch all dashboard data. Sequentially: team → members → applications.
     const fetchData = useCallback(async () => {
         if (!teamId) return
 
         try {
-            // Get BOTH email (from localStorage) and UUID (from Supabase Auth session)
-            // because creator_id / team_members.user_id in DB may be either format.
-            const localEmail = localStorage.getItem("user_email")
-
+            // --- Step 1: Resolve the current user's UUID via Supabase Auth ---
+            // getSession() reads from local cache (may be null on prod first load with PKCE)
+            // getUser() makes a live network call and is always authoritative.
             const { data: sessionData } = await supabase.auth.getSession()
-            const supabaseUser = sessionData?.session?.user
-            const supabaseUUID = supabaseUser?.id || null
-            const supabaseEmail = supabaseUser?.email || null
+            let currentUser = sessionData?.session?.user
 
-            // Collect all possible identifiers for the current user
-            const userIds = new Set<string>(
-                [localEmail, supabaseUUID, supabaseEmail].filter(Boolean) as string[]
+            if (!currentUser) {
+                const { data: userData } = await supabase.auth.getUser()
+                currentUser = userData?.user ?? undefined
+            }
+
+            const supabaseUUID = currentUser?.id ?? null
+            const supabaseEmail = currentUser?.email ?? null
+            const localEmail = localStorage.getItem('user_email')
+
+            // All possible identifiers this user may appear as in the DB
+            const myIds = new Set<string>(
+                [supabaseUUID, supabaseEmail, localEmail].filter(Boolean) as string[]
             )
 
-            // Primary userId for API calls (UUID preferred, fallback to email)
-            const primaryUserId = supabaseUUID || localEmail
-
-            if (!primaryUserId) {
+            // Primary ID to pass to API routes (should be UUID for DB ops)
+            const primaryId = supabaseUUID || localEmail
+            if (!primaryId) {
                 router.push('/login')
                 return
             }
-            setUserId(primaryUserId)
+            setUserId(primaryId)
 
             const authHeaders = await getAuthHeaders()
 
-            // 1. Fetch team — triggers auto-repair so creator is in team_members
-            let teamData: any = null
+            // --- Step 2: Fetch team data (also triggers auto-repair of creator in team_members) ---
             const teamRes = await fetch(`/api/teams/${teamId}`, { headers: authHeaders })
-            if (teamRes.ok) {
-                teamData = await teamRes.json()
-            } else {
-                // API route failed (e.g. SUPABASE_SERVICE_ROLE_KEY missing on server).
-                // Fallback: fetch the team directly from Supabase client-side.
-                const errBody = await teamRes.text().catch(() => '')
-                console.error(`[Dashboard] /api/teams/${teamId} failed (${teamRes.status}):`, errBody)
-
-                const { data: fallbackTeam, error: fallbackErr } = await supabase
-                    .from('teams')
-                    .select('*')
-                    .eq('id', teamId)
-                    .single()
-
-                if (fallbackErr || !fallbackTeam) {
-                    throw new Error(`Team fetch failed: ${fallbackErr?.message || errBody || 'Unknown'}`)
-                }
-                teamData = fallbackTeam
+            if (!teamRes.ok) {
+                const errText = await teamRes.text().catch(() => '')
+                console.error(`[Dashboard] Team fetch failed (${teamRes.status}):`, errText)
+                throw new Error(`Team not found or server error: ${teamRes.status}`)
             }
-
+            const teamData = await teamRes.json()
             setTeam(teamData)
             setFormData({
-                title: teamData.title,
-                description: teamData.description,
-                status: teamData.status,
+                title: teamData.title || '',
+                description: teamData.description || '',
+                status: teamData.status || 'open',
                 roles_needed: (teamData.roles_needed || []).join(', '),
                 skills_required: (teamData.skills_required || []).join(', ')
             })
 
-            // isCreator: true if any of the user's identifiers match the team's creator_id
-            // NOTE: creator_id in DB is the Supabase UUID, so supabaseUUID should match.
-            const isCreator = !!teamData.creator_id && userIds.has(teamData.creator_id)
+            // Check if current user is the creator
+            const isCreator = !!teamData.creator_id && myIds.has(teamData.creator_id)
 
-            // 2. Fetch members
-            let membersData: any[] = []
+            // --- Step 3: Fetch members (API auto-repairs missing creator) ---
             const membersRes = await fetch(`/api/teams/${teamId}/members`, { headers: authHeaders })
-            if (membersRes.ok) {
-                membersData = await membersRes.json()
-            } else {
-                // Fallback: fetch members directly from Supabase
-                console.warn('[Dashboard] Members API failed, falling back to direct Supabase query')
-                const { data: fallbackMembers } = await supabase
-                    .from('team_members')
-                    .select('user_id, role, joined_at')
-                    .eq('team_id', teamId)
-                membersData = fallbackMembers || []
+            if (!membersRes.ok) {
+                const errText = await membersRes.text().catch(() => '')
+                console.error(`[Dashboard] Members fetch failed (${membersRes.status}):`, errText)
             }
+            const membersData: any[] = membersRes.ok ? await membersRes.json() : []
             setMembers(membersData)
 
-            // Match member row against any known user ID (UUID or email)
-            const myMember = membersData.find((m: any) => userIds.has(m.user_id))
+            // Find current user's row in team_members (matching by any known ID)
+            const myMemberRow = membersData.find((m: any) => myIds.has(m.user_id))
+            const isAdminRole = myMemberRow && ['admin', 'Leader', 'creator'].includes(myMemberRow.role)
 
-            if (isCreator || (myMember && ['admin', 'Leader', 'creator'].includes(myMember.role))) {
-                setCurrentUserRole('admin')
+            // --- Step 4: Determine role ---
+            let resolvedRole: 'admin' | 'member' | null = null
+            if (isCreator || isAdminRole) {
+                resolvedRole = 'admin'
+            } else if (myMemberRow) {
+                resolvedRole = 'member'
+            }
+            setCurrentUserRole(resolvedRole)
 
-                // 3. Fetch applications (Admin only)
+            // --- Step 5: Fetch applications if admin ---
+            if (resolvedRole === 'admin') {
                 const appsRes = await fetch(`/api/teams/${teamId}/applications`, { headers: authHeaders })
                 if (appsRes.ok) {
                     const appsData = await appsRes.json()
                     setApplications(appsData)
+                } else {
+                    console.warn('[Dashboard] Applications fetch failed:', appsRes.status)
+                    setApplications([])
                 }
-            } else if (myMember) {
-                setCurrentUserRole('member')
-            } else if (isCreator) {
-                // Creator may not be in member list yet (auto-repair in-flight); grant admin access anyway
-                setCurrentUserRole('admin')
-            } else {
-                setCurrentUserRole(null)
             }
 
         } catch (error) {
-            console.error("Error fetching dashboard data:", error)
-            toast({ title: "Error", description: "Failed to load dashboard data", variant: "destructive" })
+            console.error('[Dashboard] fetchData error:', error)
+            toast({ title: 'Error', description: 'Failed to load dashboard data', variant: 'destructive' })
         } finally {
             setIsLoading(false)
         }
     }, [teamId, router, toast, getAuthHeaders])
+
 
 
 

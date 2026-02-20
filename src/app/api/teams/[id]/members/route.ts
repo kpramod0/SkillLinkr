@@ -13,7 +13,7 @@ export async function GET(
     const teamId = (await params).id;
 
     try {
-        const { data: members, error: membersError } = await supabaseAdmin
+        let { data: members, error: membersError } = await supabaseAdmin
             .from('team_members')
             .select('role, joined_at, user_id')
             .eq('team_id', teamId);
@@ -23,8 +23,29 @@ export async function GET(
             return NextResponse.json({ error: membersError.message }, { status: 500 });
         }
 
+        // AUTO-REPAIR: If no members found, insert the team creator as admin
         if (!members || members.length === 0) {
-            return NextResponse.json([]);
+            const { data: teamRow } = await supabaseAdmin
+                .from('teams')
+                .select('creator_id')
+                .eq('id', teamId)
+                .maybeSingle();
+
+            if (teamRow?.creator_id) {
+                await supabaseAdmin.from('team_members').upsert(
+                    { team_id: teamId, user_id: teamRow.creator_id, role: 'admin' },
+                    { onConflict: 'team_id,user_id' }
+                );
+
+                // Re-fetch after repair
+                const { data: repairedMembers } = await supabaseAdmin
+                    .from('team_members')
+                    .select('role, joined_at, user_id')
+                    .eq('team_id', teamId);
+                members = repairedMembers || [];
+            } else {
+                return NextResponse.json([]);
+            }
         }
 
         // Fetch profiles for all member user_ids
@@ -64,11 +85,11 @@ export async function GET(
                 ...member,
                 profiles: {
                     id: uid,
-                    first_name: uid.split('@')[0],
-                    last_name: '(Member)',
+                    first_name: uid.includes('@') ? uid.split('@')[0] : 'Team',
+                    last_name: '(Admin)',
                     email: uid,
                     photos: [],
-                    headline: 'Team Member'
+                    headline: 'Team Creator'
                 }
             };
         });
@@ -79,6 +100,7 @@ export async function GET(
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
+
 
 /**
  * PUT /api/teams/[id]/members
