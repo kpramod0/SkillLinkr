@@ -111,9 +111,28 @@ export default function TeamDashboard() {
             const authHeaders = await getAuthHeaders()
 
             // 1. Fetch team — triggers auto-repair so creator is in team_members
+            let teamData: any = null
             const teamRes = await fetch(`/api/teams/${teamId}`, { headers: authHeaders })
-            if (!teamRes.ok) throw new Error('Team not found')
-            const teamData = await teamRes.json()
+            if (teamRes.ok) {
+                teamData = await teamRes.json()
+            } else {
+                // API route failed (e.g. SUPABASE_SERVICE_ROLE_KEY missing on server).
+                // Fallback: fetch the team directly from Supabase client-side.
+                const errBody = await teamRes.text().catch(() => '')
+                console.error(`[Dashboard] /api/teams/${teamId} failed (${teamRes.status}):`, errBody)
+
+                const { data: fallbackTeam, error: fallbackErr } = await supabase
+                    .from('teams')
+                    .select('*')
+                    .eq('id', teamId)
+                    .single()
+
+                if (fallbackErr || !fallbackTeam) {
+                    throw new Error(`Team fetch failed: ${fallbackErr?.message || errBody || 'Unknown'}`)
+                }
+                teamData = fallbackTeam
+            }
+
             setTeam(teamData)
             setFormData({
                 title: teamData.title,
@@ -124,37 +143,44 @@ export default function TeamDashboard() {
             })
 
             // isCreator: true if any of the user's identifiers match the team's creator_id
+            // NOTE: creator_id in DB is the Supabase UUID, so supabaseUUID should match.
             const isCreator = !!teamData.creator_id && userIds.has(teamData.creator_id)
 
             // 2. Fetch members
+            let membersData: any[] = []
             const membersRes = await fetch(`/api/teams/${teamId}/members`, { headers: authHeaders })
             if (membersRes.ok) {
-                const membersData = await membersRes.json()
-                setMembers(membersData)
+                membersData = await membersRes.json()
+            } else {
+                // Fallback: fetch members directly from Supabase
+                console.warn('[Dashboard] Members API failed, falling back to direct Supabase query')
+                const { data: fallbackMembers } = await supabase
+                    .from('team_members')
+                    .select('user_id, role, joined_at')
+                    .eq('team_id', teamId)
+                membersData = fallbackMembers || []
+            }
+            setMembers(membersData)
 
-                // Match member row against any known user ID (UUID or email)
-                const myMember = membersData.find((m: any) => userIds.has(m.user_id))
+            // Match member row against any known user ID (UUID or email)
+            const myMember = membersData.find((m: any) => userIds.has(m.user_id))
 
-                if (isCreator || (myMember && ['admin', 'Leader', 'creator'].includes(myMember.role))) {
-                    setCurrentUserRole('admin')
-
-                    // 3. Fetch applications (Admin only)
-                    const appsRes = await fetch(`/api/teams/${teamId}/applications`, { headers: authHeaders })
-                    if (appsRes.ok) {
-                        const appsData = await appsRes.json()
-                        setApplications(appsData)
-                    }
-                } else if (myMember) {
-                    setCurrentUserRole('member')
-                } else if (isCreator) {
-                    // Creator may not be in member list yet (auto-repair in-flight); grant admin access anyway
-                    setCurrentUserRole('admin')
-                } else {
-                    setCurrentUserRole(null)
-                }
-            } else if (isCreator) {
-                // Members API failed, but user is confirmed creator — still grant admin access
+            if (isCreator || (myMember && ['admin', 'Leader', 'creator'].includes(myMember.role))) {
                 setCurrentUserRole('admin')
+
+                // 3. Fetch applications (Admin only)
+                const appsRes = await fetch(`/api/teams/${teamId}/applications`, { headers: authHeaders })
+                if (appsRes.ok) {
+                    const appsData = await appsRes.json()
+                    setApplications(appsData)
+                }
+            } else if (myMember) {
+                setCurrentUserRole('member')
+            } else if (isCreator) {
+                // Creator may not be in member list yet (auto-repair in-flight); grant admin access anyway
+                setCurrentUserRole('admin')
+            } else {
+                setCurrentUserRole(null)
             }
 
         } catch (error) {
