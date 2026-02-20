@@ -149,6 +149,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             if (res.ok) {
                 const data = await res.json()
                 setConversations(data)
+                // Persist for instant load next time
+                sessionStorage.setItem(`convs_${uid}`, JSON.stringify(data))
             }
         } catch (error) {
             console.error("Failed to fetch conversations", error)
@@ -158,32 +160,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }, [getAuthHeaders])
 
     // --- Initialization ---
-    // Identify user from localStorage and load initial data
-    // --- Initialization ---
     // Identify user from Supabase Session and load initial data
     useEffect(() => {
-        // 1. Get initial session
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user?.email) {
-                setUserId(session.user.email)
-                fetchConversations(session.user.email)
+                const uid = session.user.email
+                setUserId(uid)
+
+                // 1. Try to load from cache immediately
+                const cached = sessionStorage.getItem(`convs_${uid}`)
+                if (cached) {
+                    try {
+                        setConversations(JSON.parse(cached))
+                        setIsLoading(false) // Ready to display cached data
+                    } catch (e) { }
+                }
+
+                // 2. Fetch fresh data in background
+                fetchConversations(uid)
             } else {
                 setIsLoading(false)
             }
         })
 
-        // 2. Listen for auth changes
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.user?.email) {
-                setUserId(session.user.email)
-                fetchConversations(session.user.email)
+                const uid = session.user.email
+                setUserId(uid)
+                fetchConversations(uid)
             } else {
                 setUserId(null)
                 setConversations([])
                 setMessages([])
                 setIsLoading(false)
+                sessionStorage.clear()
             }
         })
 

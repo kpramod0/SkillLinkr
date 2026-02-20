@@ -16,8 +16,14 @@ function getSupabase() {
 
     if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable.");
     if (!serviceRoleKey) {
-        console.error("CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing in production environment!");
-        throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY. Please add it to your environment variables (Amplify/Vercel).");
+        console.error("CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing!");
+        console.log("Environment check:", {
+            hasUrl: !!supabaseUrl,
+            hasAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+            nodeEnv: process.env.NODE_ENV
+        });
+        throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY. If you just added it to Amplify/Vercel, you MUST trigger a new deployment for it to take effect.");
     }
 
     return createClient(supabaseUrl, serviceRoleKey, {

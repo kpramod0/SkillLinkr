@@ -18,28 +18,28 @@ export function DiscoveryToggle({ mode, onChange }: DiscoveryToggleProps) {
     const activeIndex = options.findIndex(o => o.id === mode)
 
     return (
-        <div className="bg-muted/50 p-1 rounded-full flex relative w-64 mx-auto mb-4 border border-border/50">
-            {/* Animated Background */}
+        <div className="bg-[#1A1A2E]/80 backdrop-blur-md p-1.5 rounded-xl flex relative w-full max-w-[240px] sm:w-[320px] mx-auto mb-4 border border-white/10 shadow-xl">
+            {/* Animated Background Pill */}
             <motion.div
                 layout
-                className="absolute top-1 bottom-1 bg-background rounded-full shadow-sm border border-border"
+                className="absolute top-1.5 bottom-1.5 bg-black rounded-lg shadow-lg border border-white/5"
                 initial={false}
                 animate={{
-                    left: `calc(${activeIndex * 33.33}% + 4px)`,
-                    width: 'calc(33.33% - 8px)'
+                    left: `calc(${activeIndex * 33.33}% + 6px)`,
+                    width: 'calc(33.33% - 12px)'
                 }}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                transition={{ type: "spring", stiffness: 450, damping: 35 }}
             />
 
             {options.map((option) => (
                 <button
                     key={option.id}
                     onClick={() => onChange(option.id)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs sm:text-sm font-medium relative z-10 py-1.5 transition-colors ${mode === option.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80'}`}
+                    className={`flex-1 flex items-center justify-center gap-2.5 text-[11px] sm:text-xs md:text-sm font-semibold relative z-10 py-2 sm:py-3 transition-all duration-300 ${mode === option.id ? 'text-white' : 'text-gray-400 hover:text-gray-200'}`}
                 >
-                    <option.icon className="h-3.5 w-3.5" />
+                    <option.icon className={`h-4 w-4 sm:h-4.5 sm:w-4.5 transition-transform duration-300 ${mode === option.id ? 'scale-110' : 'scale-100'}`} />
                     <span className="hidden sm:inline">{option.label}</span>
-                    <span className="sm:hidden">{option.label === 'People' ? 'Ppl' : option.label === 'Team' ? 'Team' : 'Mine'}</span>
+                    <span className="sm:hidden">{option.label === 'People' ? 'People' : option.label === 'Team' ? 'Team' : 'Mine'}</span>
                 </button>
             ))}
         </div>

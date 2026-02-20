@@ -23,8 +23,8 @@ export const metadata: Metadata = {
 
   // 3. Favicon / tab icon — using our custom logo
   icons: {
-    icon: "/icon.png",
-    apple: "/icon.png",
+    icon: "/icon.png?v=2",
+    apple: "/icon.png?v=2",
   },
 };
 

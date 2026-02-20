@@ -26,9 +26,24 @@ export default function ProfilePage() {
         }
         setEmail(storedEmail);
 
+        // 1. Check Session Cache for instant load
+        try {
+            const cached = sessionStorage.getItem(`profile_${storedEmail}`);
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data?.visuals?.photos?.length > 0) {
+                    setPhotoUrl(data.visuals.photos[0]);
+                }
+            }
+        } catch (e) { }
+
+        // 2. Background Fetch
         fetch(`/api/profile?email=${encodeURIComponent(storedEmail)}`, { cache: 'no-store' })
             .then(res => res.ok ? res.json() : null)
             .then(data => {
+                if (data) {
+                    sessionStorage.setItem(`profile_${storedEmail}`, JSON.stringify(data));
+                }
                 // Don't overwrite the display URL if the user is mid-upload
                 if (uploadingRef.current) return;
                 if (data?.visuals?.photos?.length > 0) {

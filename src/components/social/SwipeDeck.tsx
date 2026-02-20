@@ -60,10 +60,37 @@ export function SwipeDeck() {
     // Active deck for swiping (People or Discoverable Teams)
     const activeDeck = mode === 'people' ? profiles : discoverableTeams
 
+    // List Caching for Performance
+    const getCachedList = (key: string) => {
+        try {
+            const cached = sessionStorage.getItem(key);
+            if (cached) {
+                const { data, timestamp } = JSON.parse(cached);
+                // Cache valid for 5 minutes
+                if (Date.now() - timestamp < 5 * 60 * 1000) return data;
+            }
+        } catch (e) { }
+        return null;
+    }
+
+    const setCachedList = (key: string, data: any) => {
+        try {
+            sessionStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+        } catch (e) { }
+    }
+
     // Fetch profiles from API
     useEffect(() => {
         const fetchProfiles = async () => {
-            setLoading(true)
+            const cacheKey = `profiles_${filters.genders?.join('_') || 'all'}`;
+            const cached = getCachedList(cacheKey);
+            if (cached) {
+                setProfiles(cached);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+
             try {
                 const email = localStorage.getItem("user_email")
                 const url = email ? `/api/profiles?userId=${encodeURIComponent(email)}` : '/api/profiles'
@@ -88,38 +115,23 @@ export function SwipeDeck() {
                     )
                 }
 
+                // Apply Filters
                 if (filters.genders && filters.genders.length > 0 && !filters.genders.includes('Any')) {
                     filtered = filtered.filter(p => filters.genders.includes(p.personal.gender))
                 }
-
                 if (filters.years && filters.years.length > 0) {
                     filtered = filtered.filter(p => filters.years.includes(p.professionalDetails.year))
                 }
-
                 if (filters.domains && filters.domains.length > 0) {
-                    filtered = filtered.filter(p => {
-                        return p.professionalDetails?.domains?.some(domain =>
-                            filters.domains.includes(domain)
-                        )
-                    })
+                    filtered = filtered.filter(p => p.professionalDetails?.domains?.some(domain => filters.domains.includes(domain)))
                 }
-
                 if (filters.skills && filters.skills.length > 0) {
                     const lowercaseFilters = filters.skills.map(s => s.toLowerCase())
-                    filtered = filtered.filter(p => {
-                        const profileSkills = p.professionalDetails?.skills?.map(s => s.name.toLowerCase()) || []
-                        return profileSkills.some(s => lowercaseFilters.includes(s))
-                    })
-                }
-
-                if (filters.openTo && filters.openTo.length > 0) {
-                    filtered = filtered.filter(p => {
-                        const profileOpenTo = p.professionalDetails?.openTo || []
-                        return profileOpenTo.some(badge => filters.openTo.includes(badge))
-                    })
+                    filtered = filtered.filter(p => p.professionalDetails?.skills?.map(s => s.name.toLowerCase()).some(s => lowercaseFilters.includes(s)))
                 }
 
                 setProfiles(filtered)
+                setCachedList(cacheKey, filtered);
             } catch (error) {
                 console.error("Error fetching swipe profiles:", error)
             } finally {
@@ -128,7 +140,15 @@ export function SwipeDeck() {
         }
 
         const fetchTeams = async () => {
-            setLoading(true)
+            const cacheKey = `teams_${mode}`;
+            const cached = getCachedList(cacheKey);
+            if (cached) {
+                setAllTeams(cached);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+
             try {
                 const email = localStorage.getItem("user_email")
                 const filter = mode === 'my-teams' ? 'mine' : 'discover';
@@ -140,6 +160,7 @@ export function SwipeDeck() {
                 if (!res.ok) throw new Error('Failed to fetch teams')
                 const data = await res.json()
                 setAllTeams(data)
+                setCachedList(cacheKey, data);
             } catch (error) {
                 console.error("Error fetching teams:", error)
             } finally {
@@ -149,16 +170,14 @@ export function SwipeDeck() {
 
         if (!contextLoading) {
             if (mode === 'people') fetchProfiles()
-            else fetchTeams() // Fetch for both 'teams' and 'my-teams', URL logic handles difference
+            else fetchTeams()
         }
 
-        // Fetch Current User Email — prioritize localStorage (consistent with rest of app)
         const getUser = async () => {
             const localEmail = localStorage.getItem("user_email")
             if (localEmail) {
                 setCurrentUserId(localEmail)
             } else {
-                // Fallback to Supabase auth
                 const { data: { user } } = await supabase.auth.getUser()
                 if (user?.email) setCurrentUserId(user.email)
             }
@@ -345,41 +364,43 @@ export function SwipeDeck() {
         <div className="flex flex-col h-full w-full md:max-w-sm mx-auto relative overflow-hidden">
 
             {/* Header: Toggle (centered) + Count (right, only in Teams mode) */}
-            <div className="absolute top-6 left-0 right-0 z-50 flex items-center justify-center px-4 pointer-events-none">
+            <div className="pt-6 px-4 z-50 flex items-center justify-between pointer-events-none relative shrink-0">
+                {/* Placeholder for left spacing to keep toggle centered */}
+                <div className="w-10 h-10 lg:w-16" />
 
-                {/* Toggle — always centered */}
+                {/* Toggle — centered */}
                 <div className="flex-shrink-0 pointer-events-auto">
                     <DiscoveryToggle mode={mode} onChange={(m) => setMode(m as any)} />
                 </div>
 
-                {/* Member Count — right side with gap and slight upward nudge to align with toggle mid */}
-                {mode === 'teams' && discoverableTeams.length > 0 && (
-                    <div className="absolute right-2 pointer-events-auto -translate-y-0.5">
+                {/* Member Count — right side */}
+                <div className="w-10 h-10 lg:w-16 flex justify-end pointer-events-auto">
+                    {mode === 'teams' && discoverableTeams.length > 0 && (
                         <button
                             onClick={() => setIsMembersModalOpen(true)}
-                            className="bg-background/80 backdrop-blur-md border rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-background transition-colors text-xs font-medium"
+                            className="bg-background/80 backdrop-blur-md border rounded-full px-2 py-1.5 flex items-center gap-1.5 shadow-sm hover:bg-background transition-all active:scale-95 text-[10px] font-medium"
                         >
-                            <Users className="h-3 w-3 text-muted-foreground" />
+                            <Users className="h-3 w-3 text-primary" />
                             <span>
                                 {discoverableTeams[discoverableTeams.length - 1]?.members?.length || 1}
                             </span>
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 relative w-full h-full">
+            <div className="flex-1 relative w-full h-full min-h-0">
                 {mode === 'my-teams' ? (
-                    <div className="absolute inset-0 pt-24 px-4 overflow-y-auto pb-20 bg-background/50 backdrop-blur-sm z-40">
+                    <div className="absolute inset-0 pt-4 px-4 overflow-y-auto pb-24 bg-background/50 backdrop-blur-sm z-40">
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-xl font-bold">My Teams</h2>
+                            <h2 className="text-lg font-bold">My Teams</h2>
                             <Button
                                 size="sm"
-                                className="rounded-full shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 h-8 px-4 text-xs"
+                                className="rounded-full shadow-sm bg-primary text-white hover:bg-primary/90 h-8 px-4 text-xs"
                                 onClick={() => setIsCreateTeamOpen(true)}
                             >
-                                <Plus className="h-3 w-3 mr-1" /> Create Team
+                                <Plus className="h-3 w-3 mr-1" /> Create
                             </Button>
                         </div>
 
@@ -388,11 +409,11 @@ export function SwipeDeck() {
                                 myTeams.map((team) => (
                                     <div key={team.id} className="flex items-center justify-between p-4 bg-card border rounded-xl hover:bg-muted/30 transition-colors shadow-sm">
                                         <div>
-                                            <h3 className="font-semibold text-base mb-1">{team.title}</h3>
-                                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                            <h3 className="font-semibold text-sm mb-1">{team.title}</h3>
+                                            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                                                 <div className="flex items-center gap-1">
                                                     <Users className="h-3 w-3" />
-                                                    {(team.member_count ?? team.members?.length ?? 0)} Member{((team.member_count ?? team.members?.length ?? 0) !== 1) ? 's' : ''}
+                                                    {(team.member_count ?? team.members?.length ?? 0)}
                                                 </div>
                                                 <span className={`px-1.5 py-0.5 rounded-full border ${team.status === 'open' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}`}>
                                                     {team.status === 'open' ? 'Recruiting' : 'Closed'}
@@ -400,25 +421,21 @@ export function SwipeDeck() {
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-2">
-                                            {/* Share logic would go here or reuse MyTeamsModal logic, simplified for now to just Manage */}
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => {
-                                                    router.push(`/main/teams/${team.id}/dashboard`)
-                                                }}
-                                            >
-                                                Manage
-                                            </Button>
-                                        </div>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 text-xs"
+                                            onClick={() => router.push(`/main/teams/${team.id}/dashboard`)}
+                                        >
+                                            Manage
+                                        </Button>
                                     </div>
                                 ))
                             ) : (
                                 <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-xl">
-                                    <Briefcase className="h-10 w-10 mx-auto opacity-20 mb-3" />
-                                    <p className="mb-2">You haven't created any teams.</p>
-                                    <Button variant="link" onClick={() => setIsCreateTeamOpen(true)}>
+                                    <Briefcase className="h-8 w-8 mx-auto opacity-20 mb-3" />
+                                    <p className="text-sm mb-2">No teams created yet.</p>
+                                    <Button variant="link" size="sm" onClick={() => setIsCreateTeamOpen(true)}>
                                         Create your first team
                                     </Button>
                                 </div>
@@ -430,7 +447,7 @@ export function SwipeDeck() {
                     <AnimatePresence mode="popLayout">
                         {mode === 'people' ? (
                             profiles.length > 0 ? (
-                                profiles.map((profile, index) => {
+                                [...profiles].map((profile, index) => {
                                     const isTop = index === profiles.length - 1
                                     return (
                                         <SwipeCard
@@ -445,16 +462,20 @@ export function SwipeDeck() {
                                 })
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground pb-20">
-                                    <div className="p-4 bg-muted rounded-full mb-4">
-                                        <RefreshCcw className="h-8 w-8" />
-                                    </div>
-                                    <p>No more profiles around you.</p>
-                                    <Button variant="link" onClick={() => window.location.reload()}>Refresh</Button>
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="p-4 bg-muted/50 rounded-full mb-4 shadow-inner"
+                                    >
+                                        <RefreshCcw className="h-8 w-8 animate-spin-slow" />
+                                    </motion.div>
+                                    <p className="text-sm">No more profiles nearby.</p>
+                                    <Button variant="link" size="sm" onClick={() => window.location.reload()}>Refresh List</Button>
                                 </div>
                             )
                         ) : ( // mode === 'teams'
                             discoverableTeams.length > 0 ? (
-                                discoverableTeams.map((team, index) => {
+                                [...discoverableTeams].map((team, index) => {
                                     const isTop = index === discoverableTeams.length - 1
                                     return (
                                         <TeamCard
@@ -468,11 +489,15 @@ export function SwipeDeck() {
                                 })
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground pb-20">
-                                    <div className="p-4 bg-muted rounded-full mb-4">
-                                        <Briefcase className="h-8 w-8" />
-                                    </div>
-                                    <p>No active teams looking for members.</p>
-                                    <Button variant="link" onClick={() => setIsCreateTeamOpen(true)}>Create One?</Button>
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="p-4 bg-muted/50 rounded-full mb-4 shadow-inner"
+                                    >
+                                        <Briefcase className="h-8 w-8 opacity-40" />
+                                    </motion.div>
+                                    <p className="text-sm">No active teams recruiting.</p>
+                                    <Button variant="link" size="sm" onClick={() => setIsCreateTeamOpen(true)}>Create a Team</Button>
                                 </div>
                             )
                         )}
@@ -483,36 +508,36 @@ export function SwipeDeck() {
             {/* Footer / Action Buttons (Only for Swipe Modes) */}
             {mode !== 'my-teams' && (
                 <div className="absolute bottom-6 left-0 right-0 z-50 flex justify-center items-center gap-6 pointer-events-none">
-                    <div className="pointer-events-auto flex gap-4">
+                    <div className="pointer-events-auto flex gap-4 items-center">
                         <Button
                             size="icon"
                             variant="outline"
-                            className="h-14 w-14 rounded-full border-2 border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/50 shadow-lg bg-background"
+                            className="h-12 w-12 rounded-full border-2 border-red-500/10 text-red-500 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/30 shadow-md bg-background transition-all active:scale-90"
                             onClick={() => handleSwipeWrapper("left")}
                             disabled={isAnimating || !!messageTarget || !!teamTarget || activeDeck.length === 0}
                         >
-                            <X className="h-6 w-6" />
+                            <X className="h-5 w-5" />
                         </Button>
 
                         {mode === 'people' && (
                             <Button
                                 size="icon"
                                 variant="outline"
-                                className="h-10 w-10 rounded-full border-2 border-sky-500/20 text-sky-500 hover:bg-sky-500/10 hover:text-sky-600 hover:border-sky-500/50 shadow-md bg-background mt-2"
+                                className="h-10 w-10 rounded-full border-2 border-sky-500/10 text-sky-500 hover:bg-sky-500/10 hover:text-sky-600 hover:border-sky-500/30 shadow-sm bg-background transition-all active:scale-90"
                                 onClick={handleStar}
                                 disabled={isAnimating || !!messageTarget || activeDeck.length === 0}
                             >
-                                <Star className="h-5 w-5 fill-current" />
+                                <Star className="h-4 w-4 fill-current" />
                             </Button>
                         )}
 
                         <Button
                             size="icon"
-                            className="h-14 w-14 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg border-none"
+                            className="h-12 w-12 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 shadow-md border-none transition-all active:scale-95 flex items-center justify-center"
                             onClick={() => handleSwipeWrapper("right")}
                             disabled={isAnimating || !!messageTarget || !!teamTarget || activeDeck.length === 0}
                         >
-                            {mode === 'people' ? <Check className="h-6 w-6" strokeWidth={3} /> : <Check className="h-6 w-6" strokeWidth={3} />}
+                            <Check className="h-6 w-6" strokeWidth={3} />
                         </Button>
                     </div>
                 </div>
@@ -578,7 +603,7 @@ export function SwipeDeck() {
 
                     // Check if I am a member or creator
                     const isCreator = currentTeam.creator?.id === myEmail
-                    const isMember = currentTeam.members?.some((m: any) => m.user.id === myEmail)
+                    const isMember = currentTeam.members?.some((m: any) => m.user?.id === myEmail)
 
                     if (isCreator || isMember) {
                         return () => {

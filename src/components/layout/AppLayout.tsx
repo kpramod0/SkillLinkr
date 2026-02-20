@@ -59,7 +59,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                             <div className="h-[106px] w-[106px] rounded-full shadow-md overflow-hidden shrink-0 flex items-center justify-center bg-background">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                    src="/logo1.png"
+                                    src="/logo1.png?v=2"
                                     alt="SkillLinkr Logo"
                                     width={106}
                                     height={106}
@@ -174,7 +174,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <div className="absolute left-4 flex items-center gap-2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src="/logo.png"
+                            src="/logo1.png?v=3"
                             alt="SkillLinkr Logo"
                             width={32}
                             height={32}
