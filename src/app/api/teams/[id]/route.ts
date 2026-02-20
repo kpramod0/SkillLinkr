@@ -1,18 +1,10 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-// Helper to get Supabase client
-function getSupabase() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
-    return createClient(supabaseUrl, supabaseKey);
-}
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 // Helper to check admin status
 // Returns true if user is a member with an admin role, OR if they are the original creator
 async function isTeamAdmin(teamId: string, userId: string) {
-    const supabase = getSupabase();
+    const supabase = supabaseAdmin;
 
     // Check team_members table first
     const { data: memberData } = await supabase
@@ -52,7 +44,7 @@ export async function GET(
 ) {
     try {
         const teamId = (await params).id;
-        const supabase = getSupabase();
+        const supabase = supabaseAdmin;
 
         // Fetch team with creator profile (simple join - avoids potential alias issues)
         const { data: team, error } = await supabase
@@ -144,7 +136,7 @@ export async function PUT(
     }
 
     // Update (note: 'updated_at' column does not exist in schema, so excluded)
-    const { data, error } = await getSupabase()
+    const { data, error } = await supabaseAdmin
         .from('teams')
         .update({
             title,

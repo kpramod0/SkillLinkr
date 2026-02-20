@@ -85,11 +85,13 @@ export default function TeamDashboard() {
     const fetchData = useCallback(async () => {
         if (!teamId) return
 
+        setIsLoading(true)
         try {
             // PRIMARY identity = email stored in localStorage (matches what's in DB)
             const currentUserEmail = localStorage.getItem('user_email')
 
             if (!currentUserEmail) {
+                console.warn('[Dashboard] No user_email in localStorage, redirecting to login')
                 router.push('/login')
                 return
             }
@@ -97,14 +99,29 @@ export default function TeamDashboard() {
 
             const authHeaders = await getAuthHeaders()
 
-            // --- Step 1: Fetch team (also auto-repairs creator in team_members) ---
+            // --- Step 1: Fetch team (tries API first, falls back to direct Supabase) ---
+            let teamData: any = null
             const teamRes = await fetch(`/api/teams/${teamId}`, { headers: authHeaders })
-            if (!teamRes.ok) {
-                const errText = await teamRes.text().catch(() => '')
-                console.error(`[Dashboard] Team fetch failed (${teamRes.status}):`, errText)
-                throw new Error(`Team fetch failed: ${teamRes.status}`)
+            if (teamRes.ok) {
+                teamData = await teamRes.json()
+            } else {
+                const errBody = await teamRes.text().catch(() => '')
+                console.warn(`[Dashboard] API Team fetch failed (${teamRes.status}): ${errBody}. Falling back to client-side Supabase.`)
+
+                // FALLBACK: Query Supabase directly using client-side SDK
+                const { data: fallbackTeam, error: fallbackErr } = await supabase
+                    .from('teams')
+                    .select('*')
+                    .eq('id', teamId)
+                    .single()
+
+                if (fallbackErr || !fallbackTeam) {
+                    console.error('[Dashboard] Double Failure: Both API and direct Supabase team fetch failed')
+                    throw new Error(`Team fetch failed: ${fallbackErr?.message || 'Not found'}`)
+                }
+                teamData = fallbackTeam
             }
-            const teamData = await teamRes.json()
+
             setTeam(teamData)
             setFormData({
                 title: teamData.title || '',
@@ -117,12 +134,23 @@ export default function TeamDashboard() {
             // creator_id stores email → direct comparison works
             const isCreator = teamData.creator_id === currentUserEmail
 
-            // --- Step 2: Fetch members (auto-repairs missing creator) ---
+            // --- Step 2: Fetch members (tries API first, falls back to direct Supabase) ---
+            let membersData: any[] = []
             const membersRes = await fetch(`/api/teams/${teamId}/members`, { headers: authHeaders })
-            if (!membersRes.ok) {
-                console.error(`[Dashboard] Members fetch failed (${membersRes.status})`)
+            if (membersRes.ok) {
+                membersData = await membersRes.json()
+            } else {
+                console.warn(`[Dashboard] Members API failed (${membersRes.status}). Falling back to direct query.`)
+                const { data: fallbackMembers, error: memErr } = await supabase
+                    .from('team_members')
+                    .select('user_id, role, joined_at')
+                    .eq('team_id', teamId)
+
+                if (memErr) {
+                    console.error('[Dashboard] Members fallback query failed:', memErr)
+                }
+                membersData = fallbackMembers || []
             }
-            const membersData: any[] = membersRes.ok ? await membersRes.json() : []
             setMembers(membersData)
 
             // team_members.user_id also stores email — direct comparison
@@ -136,6 +164,12 @@ export default function TeamDashboard() {
             } else if (myMemberRow) {
                 resolvedRole = 'member'
             }
+
+            // Critical Repair: If I am the creator but NOT in membersData yet, I am still an admin
+            if (isCreator && !resolvedRole) {
+                resolvedRole = 'admin'
+            }
+
             setCurrentUserRole(resolvedRole)
 
             // --- Step 4: Fetch applications if admin ---
@@ -144,18 +178,24 @@ export default function TeamDashboard() {
                 if (appsRes.ok) {
                     setApplications(await appsRes.json())
                 } else {
-                    console.warn('[Dashboard] Applications fetch failed:', appsRes.status)
+                    console.warn('[Dashboard] Applications API failed:', appsRes.status)
+                    // If applications API fails, we don't throw an error because team/members might still be valid
                     setApplications([])
                 }
             }
 
-        } catch (error) {
-            console.error('[Dashboard] fetchData error:', error)
-            toast({ title: 'Error', description: 'Failed to load dashboard data', variant: 'destructive' })
+        } catch (error: any) {
+            console.error('[Dashboard] Critical fetchData error:', error)
+            toast({
+                title: 'Error Loading Dashboard',
+                description: error.message || 'Check your connection and try again.',
+                variant: 'destructive'
+            })
         } finally {
             setIsLoading(false)
         }
     }, [teamId, router, toast, getAuthHeaders])
+
 
 
 
