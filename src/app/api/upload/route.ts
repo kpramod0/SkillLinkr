@@ -10,20 +10,18 @@ export const revalidate = 0;
 
 function getSupabase() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // CRITICAL: MUST use Service Role Key for storage operations to bypass RLS.
-    // If this is missing, the upload will fail with RLS violation.
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Fallback to anon key if service role is missing (though storage might fail RLS)
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable.");
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn("WARNING: SUPABASE_SERVICE_ROLE_KEY is missing, falling back to anon key. Storage uploads may fail if RLS is enabled.");
+        console.log("Environment Keys Present:", Object.keys(process.env).filter(k => k.includes('SUPABASE') || k.includes('NEXT_PUBLIC_')));
+    }
+
     if (!serviceRoleKey) {
-        console.error("CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing!");
-        console.log("Environment check:", {
-            hasUrl: !!supabaseUrl,
-            hasAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-            hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-            nodeEnv: process.env.NODE_ENV
-        });
-        throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY. If you just added it to Amplify/Vercel, you MUST trigger a new deployment for it to take effect.");
+        throw new Error("Missing Supabase keys (both Service Role and Anon). Check your environment variables.");
     }
 
     return createClient(supabaseUrl, serviceRoleKey, {
