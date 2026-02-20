@@ -2,6 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Lightweight auth client for JWT validation
 function getSupabaseAuth() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;

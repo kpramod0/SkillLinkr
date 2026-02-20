@@ -10,10 +10,15 @@ export const revalidate = 0;
 
 function getSupabase() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // CRITICAL: MUST use Service Role Key for storage operations to bypass RLS.
+    // If this is missing, the upload will fail with RLS violation.
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-    if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable.");
+    if (!serviceRoleKey) {
+        console.error("CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing in production environment!");
+        throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY. Please add it to your environment variables (Amplify/Vercel).");
+    }
 
     return createClient(supabaseUrl, serviceRoleKey, {
         auth: { persistSession: false },
