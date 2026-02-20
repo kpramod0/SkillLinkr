@@ -6,6 +6,7 @@ import { Heart, X, MessageCircle } from "lucide-react"
 import { UserProfile } from "@/types"
 import { ProfileDetailModal } from "@/components/social/ProfileDetailModal"
 import { createClient } from "@supabase/supabase-js"
+import { useRouter } from "next/navigation"
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,6 +28,7 @@ interface MatchRequest {
 }
 
 export function MatchRequestsSidebar() {
+    const router = useRouter()
     const [requests, setRequests] = useState<MatchRequest[]>([])
     const [loading, setLoading] = useState(true)
     const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null)
@@ -142,6 +144,11 @@ export function MatchRequestsSidebar() {
                         action: action === "match" ? "like" : "pass",
                     }),
                 })
+            }
+
+            if (action === "match") {
+                // Instantly move to chat section
+                setTimeout(() => router.push('/main/chat'), 500)
             }
         } catch (error) {
             console.error(`Failed to ${action} request`, error)

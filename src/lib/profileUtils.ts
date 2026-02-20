@@ -25,7 +25,7 @@ export function mapRowToProfile(row: any): UserProfile {
             photos: row.photos || [],
             github: row.github || undefined,
             linkedin: row.linkedin || undefined,
-            bio: row.bio || undefined,
+            bio: row.bio || row.short_bio || undefined,
         },
         portfolio: Array.isArray(row.portfolio) ? row.portfolio.map((p: any) => ({
             projectTitle: p.projectTitle || '',

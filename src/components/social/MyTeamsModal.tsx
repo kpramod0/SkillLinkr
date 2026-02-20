@@ -103,7 +103,7 @@ export function MyTeamsModal({ isOpen, onClose }: MyTeamsModalProps) {
                                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                         <div className="flex items-center gap-1">
                                             <Users className="h-3 w-3" />
-                                            {(team.member_count ?? team.members?.length ?? 0)} Member{(team.member_count ?? team.members?.length ?? 0) !== 1 ? 's' : ''}
+                                            {Math.max(team.member_count ?? team.members?.length ?? 0, 1)} Member{Math.max(team.member_count ?? team.members?.length ?? 0, 1) !== 1 ? 's' : ''}
                                         </div>
                                         <span className={`px-1.5 py-0.5 rounded-full border ${team.status === 'open' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}`}>
                                             {team.status === 'open' ? 'Recruiting' : 'Closed'}

@@ -372,19 +372,20 @@ export function SwipeDeck() {
                 </div>
 
                 {/* Member Count — right side, only in Teams mode */}
-                {mode === 'teams' && discoverableTeams.length > 0 && (
-                    <div className="pointer-events-auto shrink-0">
-                        <button
-                            onClick={() => setIsMembersModalOpen(true)}
-                            className="bg-background/80 backdrop-blur-md border rounded-full px-2 py-1.5 flex items-center gap-1.5 shadow-sm hover:bg-background transition-all active:scale-95 text-[10px] font-medium"
-                        >
-                            <Users className="h-3 w-3 text-primary" />
-                            <span>
-                                {discoverableTeams[discoverableTeams.length - 1]?.members?.length || 1}
-                            </span>
-                        </button>
-                    </div>
-                )}
+                {mode === 'teams' && discoverableTeams.length > 0 && (() => {
+                    const currentTeam = discoverableTeams[discoverableTeams.length - 1]
+                    return (
+                        <div className="pointer-events-auto shrink-0">
+                            <button
+                                onClick={() => setIsMembersModalOpen(true)}
+                                className="bg-background/80 backdrop-blur-md border rounded-full px-2 py-1.5 flex items-center gap-1.5 shadow-sm hover:bg-background transition-all active:scale-95 text-[10px] font-medium"
+                            >
+                                <Users className="h-3 w-3 text-primary" />
+                                <span>{currentTeam?.member_count || 1}</span>
+                            </button>
+                        </div>
+                    )
+                })()}
             </div>
 
             {/* Content Area — Full Height Cards background */}
@@ -411,7 +412,7 @@ export function SwipeDeck() {
                                             <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                                                 <div className="flex items-center gap-1">
                                                     <Users className="h-3 w-3" />
-                                                    {(team.member_count ?? team.members?.length ?? 0)}
+                                                    {Math.max(team.member_count || 0, 1)}
                                                 </div>
                                                 <span className={`px-1.5 py-0.5 rounded-full border ${team.status === 'open' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}`}>
                                                     {team.status === 'open' ? 'Recruiting' : 'Closed'}
@@ -585,24 +586,24 @@ export function SwipeDeck() {
                 isOpen={isMembersModalOpen}
                 onClose={() => setIsMembersModalOpen(false)}
                 members={mode === 'teams' && discoverableTeams.length > 0 ? discoverableTeams[discoverableTeams.length - 1]?.members : []}
+                creator={mode === 'teams' && discoverableTeams.length > 0 ? discoverableTeams[discoverableTeams.length - 1]?.creator : null}
                 teamName={mode === 'teams' && discoverableTeams.length > 0 ? discoverableTeams[discoverableTeams.length - 1]?.title : 'Team'}
                 onMemberClick={(member) => {
-                    // Convert member.user (flat DB row mostly) to UserProfile
-                    // We need to ensure we use the 'user' object from the member
                     const profile = mapRowToProfile(member.user)
                     setSelectedProfile(profile)
-                    setIsMembersModalOpen(false) // Close the list content modal
+                    setIsMembersModalOpen(false)
+                }}
+                onCreatorClick={(creator) => {
+                    const profile = mapRowToProfile(creator)
+                    setSelectedProfile(profile)
+                    setIsMembersModalOpen(false)
                 }}
                 onChat={(() => {
                     if (mode !== 'teams' || discoverableTeams.length === 0) return undefined
-
                     const currentTeam = discoverableTeams[discoverableTeams.length - 1]
                     const myEmail = localStorage.getItem("user_email")
-
-                    // Check if I am a member or creator
                     const isCreator = currentTeam.creator?.id === myEmail
                     const isMember = currentTeam.members?.some((m: any) => m.user?.id === myEmail)
-
                     if (isCreator || isMember) {
                         return () => {
                             selectConversation(`team_${currentTeam.id}`, null, 'group')

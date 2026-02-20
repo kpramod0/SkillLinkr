@@ -118,7 +118,7 @@ export async function GET(
             .select('*', { count: 'exact', head: true })
             .eq('team_id', teamId);
 
-        return NextResponse.json({ ...team, creator, member_count: finalCount ?? 0 });
+        return NextResponse.json({ ...team, creator, member_count: Math.max(finalCount ?? 0, 1) });
 
     } catch (e: any) {
         console.error('Critical error fetching team:', e);

@@ -94,7 +94,7 @@ export function TeamCard({ team, onSwipe, onClick, style, exitDirection, current
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 p-6 bg-background flex flex-col gap-4 overflow-y-auto pb-24">
+                <div className="flex-1 p-4 bg-background flex flex-col gap-3 overflow-hidden min-h-0">
 
                     {/* Creator Info */}
                     <div className="flex items-center gap-3 p-3 bg-muted/40 rounded-xl">
