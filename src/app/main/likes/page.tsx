@@ -28,11 +28,19 @@ export default function LikesPage() {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const fetchData = useCallback(async (uid: string) => {
+    const fetchData = useCallback(async () => {
+        // Fallback to localStorage if AuthContext isn't ready
+        const email = localStorage.getItem("user_email") || userId;
+
+        if (!email) {
+            setIsLoading(false);
+            return;
+        }
+
         try {
             const [likesRes, activityRes] = await Promise.all([
-                fetch(`/api/likes?userId=${uid}`),
-                fetch(`/api/activity?userId=${uid}`)
+                fetch(`/api/likes?userId=${email}`),
+                fetch(`/api/activity?userId=${email}`)
             ]);
             if (likesRes.ok) setLikedByUsers(await likesRes.json());
             if (activityRes.ok) setActivities(await activityRes.json());
@@ -41,22 +49,24 @@ export default function LikesPage() {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [userId]);
 
     useEffect(() => {
-        if (userId) fetchData(userId);
+        fetchData();
     }, [userId, fetchData]);
 
     // Real-time: instant update when someone likes you
     useEffect(() => {
-        if (!userId) return;
+        const email = localStorage.getItem("user_email") || userId;
+        if (!email) return;
+
         const unsubLike = onNewLike(() => {
             // Refresh likes list to show the new person
-            fetchData(userId);
+            fetchData();
         });
         const unsubMatch = onNewMatch(() => {
             // Refresh activity feed to show the new match
-            fetchData(userId);
+            fetchData();
         });
         return () => { unsubLike(); unsubMatch(); };
     }, [userId, onNewLike, onNewMatch, fetchData]);

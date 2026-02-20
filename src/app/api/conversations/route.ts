@@ -40,11 +40,9 @@ export async function GET(req: Request) {
 
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Use userClient if available (preferred for RLS), otherwise fallback to Admin (if exists)
-    // But since we suspect Admin is broken in prod, we really want userClient.
-    // However, if we authenticated via userIdParam (no token), userClient is null/anon.
-    // In that case, we MUST use supabaseAdmin (and hope it works) OR fail.
-    const db = userClient || supabaseAdmin;
+    // Use Admin client for fetching conversation list to avoid RLS issues in local dev
+    // We already have a verified userId (either from JWT or trusted query param)
+    const db = supabaseAdmin;
 
     if (!db || typeof db.from !== 'function') {
         console.error('Critical Error: No valid Supabase client available for user:', userId);

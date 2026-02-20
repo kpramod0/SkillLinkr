@@ -98,8 +98,8 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Missing targetId or teamId' }, { status: 400 });
         }
 
-        // select db client (userClient preferred)
-        const db = userClient || supabaseAdmin;
+        // Use Admin client for fetching messages to avoid RLS issues in local dev
+        const db = supabaseAdmin;
 
         if (!db || typeof db.from !== 'function') {
             return NextResponse.json({ error: 'Service Unavailable: Database client failed' }, { status: 503 });

@@ -143,6 +143,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // --- Fetch Conversations ---
     // Loads the list of active chats (both DMs and Groups)
     const fetchConversations = useCallback(async (uid: string) => {
+        if (!uid) return;
         try {
             const headers = await getAuthHeaders()
             const res = await fetch(`/api/conversations?userId=${uid}`, { headers })
@@ -162,45 +163,57 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // --- Initialization ---
     // Identify user from Supabase Session and load initial data
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session?.user?.email) {
-                const uid = session.user.email
-                setUserId(uid)
-
-                // 1. Try to load from cache immediately
-                const cached = sessionStorage.getItem(`convs_${uid}`)
+        const initChat = async () => {
+            // 1. Check localStorage first for immediate ID (common in this app)
+            const localEmail = localStorage.getItem("user_email");
+            if (localEmail) {
+                setUserId(localEmail);
+                const cached = sessionStorage.getItem(`convs_${localEmail}`);
                 if (cached) {
                     try {
-                        setConversations(JSON.parse(cached))
-                        setIsLoading(false) // Ready to display cached data
+                        setConversations(JSON.parse(cached));
                     } catch (e) { }
                 }
-
-                // 2. Fetch fresh data in background
-                fetchConversations(uid)
-            } else {
-                setIsLoading(false)
+                fetchConversations(localEmail);
             }
-        })
+
+            // 2. Sync with Supabase Session
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user?.email) {
+                const uid = session.user.email;
+                if (uid !== localEmail) {
+                    setUserId(uid);
+                    fetchConversations(uid);
+                }
+            } else if (!localEmail) {
+                setIsLoading(false);
+            }
+        };
+
+        initChat();
 
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.user?.email) {
-                const uid = session.user.email
-                setUserId(uid)
-                fetchConversations(uid)
+                const uid = session.user.email;
+                setUserId(uid);
+                fetchConversations(uid);
             } else {
-                setUserId(null)
-                setConversations([])
-                setMessages([])
-                setIsLoading(false)
-                sessionStorage.clear()
+                // If we have a localStorage email, we might want to keep it
+                const localEmail = localStorage.getItem("user_email");
+                if (!localEmail) {
+                    setUserId(null);
+                    setConversations([]);
+                    setMessages([]);
+                    setIsLoading(false);
+                    sessionStorage.clear();
+                }
             }
-        })
+        });
 
-        return () => subscription.unsubscribe()
-    }, [fetchConversations])
+        return () => subscription.unsubscribe();
+    }, [fetchConversations]);
 
     // --- Throttled Refresh ---
     // Prevents spamming the API during rapid updates (e.g. typing)
