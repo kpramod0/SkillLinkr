@@ -111,10 +111,22 @@ export async function POST(req: Request) {
             if (app.status !== 'pending') {
                 // Ensure membership exists if status accepted (safety)
                 if (app.status === 'accepted') {
-                    await supabaseAdmin.from('team_members').upsert(
-                        { team_id: app.team_id, user_id: app.applicant_id, role: 'member' },
-                        { onConflict: 'team_id,user_id' }
-                    );
+                    // Safe insert: check exists first
+                    const { data: existingMember2 } = await supabaseAdmin
+                        .from('team_members')
+                        .select('user_id')
+                        .eq('team_id', app.team_id)
+                        .eq('user_id', app.applicant_id)
+                        .maybeSingle();
+
+                    if (!existingMember2) {
+                        await supabaseAdmin.from('team_members').insert({
+                            team_id: app.team_id,
+                            user_id: app.applicant_id,
+                            role: 'member',
+                            joined_at: new Date().toISOString()
+                        });
+                    }
 
                     // Ensure match exists between owner and applicant for DMs
                     const ownerId = team.creator_id;
@@ -154,21 +166,38 @@ export async function POST(req: Request) {
                 return NextResponse.json({ success: true, status: 'accepted', idempotent: true });
             }
 
-            // Add to team members (idempotent upsert)
-            const { error: memberError } = await supabaseAdmin.from('team_members').upsert(
-                { team_id: app.team_id, user_id: app.applicant_id, role: 'member' },
-                { onConflict: 'team_id,user_id' }
-            );
+            // Add to team members — safe 2-step: check exists first, then insert
+            const { data: existingMember } = await supabaseAdmin
+                .from('team_members')
+                .select('user_id')
+                .eq('team_id', app.team_id)
+                .eq('user_id', app.applicant_id)
+                .maybeSingle();
 
-            if (memberError) {
-                // Roll back application status to pending to avoid accepted-without-membership
-                await supabaseAdmin
-                    .from('team_applications')
-                    .update({ status: 'pending' })
-                    .eq('id', applicationId)
-                    .eq('status', 'accepted');
+            if (!existingMember) {
+                const { error: memberError } = await supabaseAdmin
+                    .from('team_members')
+                    .insert({
+                        team_id: app.team_id,
+                        user_id: app.applicant_id,
+                        role: 'member',
+                        joined_at: new Date().toISOString()
+                    });
 
-                return NextResponse.json({ error: 'Failed to add member' }, { status: 500 });
+                if (memberError) {
+                    console.error('[AppStatus] CRITICAL: Failed to insert team member:', JSON.stringify(memberError));
+                    // Roll back application status to pending
+                    await supabaseAdmin
+                        .from('team_applications')
+                        .update({ status: 'pending' })
+                        .eq('id', applicationId)
+                        .eq('status', 'accepted');
+
+                    return NextResponse.json(
+                        { error: 'Failed to add member', detail: memberError.message },
+                        { status: 500 }
+                    );
+                }
             }
 
             // Create a Match between owner and applicant to allow direct messaging

@@ -180,23 +180,34 @@ export async function POST(
                 return NextResponse.json({ success: true, idempotent: true });
             }
 
-            // 2. Add applicant to team_members as 'member'
-            const { error: memberError } = await supabaseAdmin
+            // 2. Add applicant to team_members — safe 2-step: check exists first, then insert
+            const { data: existingMember } = await supabaseAdmin
                 .from('team_members')
-                .upsert(
-                    { team_id: teamId, user_id: targetUserId, role: 'member' },
-                    { onConflict: 'team_id,user_id' }
-                );
+                .select('user_id')
+                .eq('team_id', teamId)
+                .eq('user_id', targetUserId)
+                .maybeSingle();
 
-            if (memberError) {
-                console.error('Error adding accepted member to team_members:', memberError);
-                // Roll back to pending to prevent accepted-without-membership
-                await supabaseAdmin
-                    .from('team_applications')
-                    .update({ status: 'pending' })
-                    .eq('team_id', teamId)
-                    .eq('applicant_id', targetUserId);
-                return NextResponse.json({ error: memberError.message }, { status: 500 });
+            if (!existingMember) {
+                const { error: memberError } = await supabaseAdmin
+                    .from('team_members')
+                    .insert({
+                        team_id: teamId,
+                        user_id: targetUserId,
+                        role: 'member',
+                        joined_at: new Date().toISOString()
+                    });
+
+                if (memberError) {
+                    console.error('[Applications] CRITICAL: Failed to insert team member:', JSON.stringify(memberError));
+                    // Roll back to pending to prevent accepted-without-membership
+                    await supabaseAdmin
+                        .from('team_applications')
+                        .update({ status: 'pending' })
+                        .eq('team_id', teamId)
+                        .eq('applicant_id', targetUserId);
+                    return NextResponse.json({ error: memberError.message, detail: memberError.details }, { status: 500 });
+                }
             }
 
             // 3. Create a match record between owner and new member for DMs
