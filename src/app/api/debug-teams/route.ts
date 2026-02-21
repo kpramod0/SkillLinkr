@@ -19,8 +19,12 @@ export async function GET(req: Request) {
     const db = supabaseAdmin;
     const isAdminAvailable = !!(db && typeof db.from === 'function');
 
-    // Check supabaseAdmin client health
-    const adminKeyUsed = process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role_key' : 'ANON_KEY_FALLBACK';
+    // Safely check what keys exist in process.env (without showing values!)
+    const availableKeys = Object.keys(process.env);
+    const hasServiceKey = availableKeys.includes('SUPABASE_SERVICE_ROLE_KEY');
+    const serviceKeyLength = process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0;
+
+    const adminKeyUsed = hasServiceKey && serviceKeyLength > 50 ? 'service_role_key' : 'ANON_KEY_FALLBACK';
 
     // Step 1: Query team_members
     const { data: teamMembers, error: tmErr } = await db
@@ -48,6 +52,9 @@ export async function GET(req: Request) {
         userId,
         adminKeyUsed,
         isAdminAvailable,
+        hasServiceKey,
+        serviceKeyLength,
+        availableKeysCount: availableKeys.length,
         teamMembersFound: teamMembers?.length ?? 0,
         teamMembersError: tmErr ? JSON.stringify(tmErr) : null,
         teamIds,
