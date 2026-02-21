@@ -180,25 +180,19 @@ export async function POST(
                 return NextResponse.json({ success: true, idempotent: true });
             }
 
-            // 2. Add applicant to team_members — safe 2-step: check exists first, then insert
-            const { data: existingMember } = await supabaseAdmin
+            // 2. Add applicant to team_members — insert directly; treat duplicate key as success
+            const { error: memberError } = await supabaseAdmin
                 .from('team_members')
-                .select('user_id')
-                .eq('team_id', teamId)
-                .eq('user_id', targetUserId)
-                .maybeSingle();
+                .insert({
+                    team_id: teamId,
+                    user_id: targetUserId,
+                    role: 'member',
+                    joined_at: new Date().toISOString()
+                });
 
-            if (!existingMember) {
-                const { error: memberError } = await supabaseAdmin
-                    .from('team_members')
-                    .insert({
-                        team_id: teamId,
-                        user_id: targetUserId,
-                        role: 'member',
-                        joined_at: new Date().toISOString()
-                    });
-
-                if (memberError) {
+            if (memberError) {
+                // '23505' = duplicate key: member already exists — this is fine, continue
+                if (memberError.code !== '23505') {
                     console.error('[Applications] CRITICAL: Failed to insert team member:', JSON.stringify(memberError));
                     // Roll back to pending to prevent accepted-without-membership
                     await supabaseAdmin
@@ -208,6 +202,7 @@ export async function POST(
                         .eq('applicant_id', targetUserId);
                     return NextResponse.json({ error: memberError.message, detail: memberError.details }, { status: 500 });
                 }
+                // else: duplicate key = already a member = OK, fall through
             }
 
             // 3. Create a match record between owner and new member for DMs

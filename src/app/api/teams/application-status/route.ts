@@ -166,25 +166,19 @@ export async function POST(req: Request) {
                 return NextResponse.json({ success: true, status: 'accepted', idempotent: true });
             }
 
-            // Add to team members — safe 2-step: check exists first, then insert
-            const { data: existingMember } = await supabaseAdmin
+            // Add to team members — insert directly; treat duplicate key as success
+            const { error: memberError } = await supabaseAdmin
                 .from('team_members')
-                .select('user_id')
-                .eq('team_id', app.team_id)
-                .eq('user_id', app.applicant_id)
-                .maybeSingle();
+                .insert({
+                    team_id: app.team_id,
+                    user_id: app.applicant_id,
+                    role: 'member',
+                    joined_at: new Date().toISOString()
+                });
 
-            if (!existingMember) {
-                const { error: memberError } = await supabaseAdmin
-                    .from('team_members')
-                    .insert({
-                        team_id: app.team_id,
-                        user_id: app.applicant_id,
-                        role: 'member',
-                        joined_at: new Date().toISOString()
-                    });
-
-                if (memberError) {
+            if (memberError) {
+                // '23505' = duplicate key: member already exists — this is fine, continue
+                if (memberError.code !== '23505') {
                     console.error('[AppStatus] CRITICAL: Failed to insert team member:', JSON.stringify(memberError));
                     // Roll back application status to pending
                     await supabaseAdmin
@@ -198,6 +192,7 @@ export async function POST(req: Request) {
                         { status: 500 }
                     );
                 }
+                // else: duplicate key = already a member = OK, fall through
             }
 
             // Create a Match between owner and applicant to allow direct messaging
