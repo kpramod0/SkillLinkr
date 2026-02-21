@@ -146,12 +146,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (!uid) return;
         try {
             const headers = await getAuthHeaders()
-            const res = await fetch(`/api/conversations?userId=${uid}`, { headers })
+            const res = await fetch(`/api/conversations?userId=${encodeURIComponent(uid)}`, { headers })
             if (res.ok) {
                 const data = await res.json()
+                const teams = data.filter((c: any) => c.type === 'group')
+                const dms = data.filter((c: any) => c.type === 'direct')
+                console.log(`[ChatContext] Loaded ${dms.length} DMs + ${teams.length} teams for ${uid}`, teams)
                 setConversations(data)
-                // Persist for instant load next time
+                // Update cache
                 sessionStorage.setItem(`convs_${uid}`, JSON.stringify(data))
+            } else {
+                const errText = await res.text()
+                console.error(`[ChatContext] /api/conversations returned ${res.status}:`, errText)
             }
         } catch (error) {
             console.error("Failed to fetch conversations", error)
@@ -168,12 +174,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             const localEmail = localStorage.getItem("user_email");
             if (localEmail) {
                 setUserId(localEmail);
+                // Show cached data immediately for fast UX, but ALWAYS fetch fresh
                 const cached = sessionStorage.getItem(`convs_${localEmail}`);
                 if (cached) {
                     try {
-                        setConversations(JSON.parse(cached));
+                        const cachedData = JSON.parse(cached);
+                        console.log('[ChatContext] Loaded from cache:', cachedData.length, 'conversations');
+                        setConversations(cachedData);
                     } catch (e) { }
                 }
+                // Always fetch fresh — cache is just for instant display
                 fetchConversations(localEmail);
             }
 
@@ -181,10 +191,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user?.email) {
                 const uid = session.user.email;
-                if (uid !== localEmail) {
-                    setUserId(uid);
-                    fetchConversations(uid);
-                }
+                setUserId(uid);
+                // Always fetch fresh with JWT token
+                fetchConversations(uid);
             } else if (!localEmail) {
                 setIsLoading(false);
             }
