@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { rowToProfile } from '@/lib/db-helpers';
+
+// Force dynamic so Next.js never caches this route at the CDN/edge layer
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
@@ -16,7 +19,8 @@ export async function GET(req: Request) {
 
     try {
         // Find matches where user is either user1 or user2
-        const { data: matches, error } = await supabase
+        // Use supabaseAdmin to bypass RLS — server-side route, identity validated by userId param
+        const { data: matches, error } = await supabaseAdmin
             .from('matches')
             .select('*')
             .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
@@ -33,7 +37,7 @@ export async function GET(req: Request) {
         // Get the other user's profile for each match
         const otherUserIds = matches.map((m: any) => m.user1_id === userId ? m.user2_id : m.user1_id);
 
-        let query = supabase
+        let query = supabaseAdmin
             .from('profiles')
             .select('*')
             .in('id', otherUserIds);
@@ -49,7 +53,7 @@ export async function GET(req: Request) {
             query = query.overlaps('domains', domains);
         }
 
-        // Search query (simple name search to start)
+        // Search query
         if (q) {
             query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
         }

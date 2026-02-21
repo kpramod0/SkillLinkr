@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 
 // GET /api/activity — Fetch activity log (persistent notifications)
 export async function GET(req: Request) {

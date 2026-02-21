@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { rowToProfile } from '@/lib/db-helpers';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const domains = searchParams.get('domains')?.split(',').filter(Boolean);
 
     try {
-        let query = supabase
+        let query = supabaseAdmin
             .from('profiles')
             .select('*')
             .eq('onboarding_completed', true);
@@ -24,43 +24,58 @@ export async function GET(request: Request) {
         if (years && years.length > 0) {
             query = query.in('year', years);
         }
-        // If domains are provided, we filter by array containment if possible, 
-        // but for now let's just use .overlaps if domains is an array column.
         if (domains && domains.length > 0) {
             query = query.overlaps('domains', domains);
         }
 
-        // If userId is provided, exclude users they have already matched/requested with
+        // If userId is provided, exclude users with an active relationship
         if (userId) {
-            // Exclude self and previously interacted profiles
-            const { data: swipes } = await supabase
+            const excludedIds = new Set<string>();
+            // Always exclude self
+            excludedIds.add(userId);
+
+            // 1. Outgoing likes (requests I have sent) — exclude these from discover
+            //    NOTE: We do NOT exclude outgoing "pass" swipes so they can re-appear.
+            const { data: outgoingLikes } = await supabaseAdmin
                 .from('swipes')
                 .select('target_id')
                 .eq('swiper_id', userId)
-                .neq('action', 'pass');
+                .eq('action', 'like');
 
-            const { data: matches } = await supabase
+            // 2. Incoming likes (people who sent ME a request) — show in Likes, not Discover
+            const { data: incomingLikes } = await supabaseAdmin
+                .from('swipes')
+                .select('swiper_id')
+                .eq('target_id', userId)
+                .eq('action', 'like');
+
+            // 3. Matched users (mutual connection established)
+            const { data: matches } = await supabaseAdmin
                 .from('matches')
-                .select('user1_id, user2_id, status')
+                .select('user1_id, user2_id')
                 .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
 
-            const excludedIds = new Set<string>();
-            excludedIds.add(userId);
-
-            if (matches) {
-                matches.forEach((m: any) => {
-                    if (m.status !== 'rejected') {
-                        excludedIds.add(m.user1_id === userId ? m.user2_id : m.user1_id);
-                    }
+            if (outgoingLikes) {
+                outgoingLikes.forEach((s: any) => {
+                    if (s.target_id) excludedIds.add(s.target_id);
                 });
             }
 
-            if (swipes) {
-                swipes.forEach((s: any) => excludedIds.add(s.target_id));
+            if (incomingLikes) {
+                incomingLikes.forEach((s: any) => {
+                    if (s.swiper_id) excludedIds.add(s.swiper_id);
+                });
+            }
+
+            if (matches) {
+                matches.forEach((m: any) => {
+                    const otherId = m.user1_id === userId ? m.user2_id : m.user1_id;
+                    if (otherId) excludedIds.add(otherId);
+                });
             }
 
             if (excludedIds.size > 0) {
-                // Quoting IDs to handle special characters in emails/UUIDs
+                // Quote IDs to handle special characters (emails, UUIDs with hyphens, etc.)
                 query = query.not('id', 'in', `(${Array.from(excludedIds).map(id => `"${id}"`).join(',')})`);
             }
         }

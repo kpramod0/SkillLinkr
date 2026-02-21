@@ -34,6 +34,7 @@ export function SwipeDeck() {
     const [mode, setMode] = useState<'people' | 'teams' | 'my-teams'>('people')
     const [isCreateTeamOpen, setIsCreateTeamOpen] = useState(false)
     const [isMembersModalOpen, setIsMembersModalOpen] = useState(false)
+    const [myTeamsMembersTarget, setMyTeamsMembersTarget] = useState<any | null>(null)
 
     const [loading, setLoading] = useState(true)
     const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null)
@@ -200,6 +201,16 @@ export function SwipeDeck() {
             setIsAnimating(false)
         }, 350)
 
+        // Clear profiles cache immediately so swiped profiles don't reappear on refresh
+        try {
+            const keysToRemove: string[] = []
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const k = sessionStorage.key(i)
+                if (k && k.startsWith('profiles_')) keysToRemove.push(k)
+            }
+            keysToRemove.forEach(k => sessionStorage.removeItem(k))
+        } catch (e) { }
+
         try {
             const email = localStorage.getItem("user_email")
             if (!email) return
@@ -255,12 +266,14 @@ export function SwipeDeck() {
         const userId = localStorage.getItem("user_email")
         if (!userId) return
 
+        // Always clear the teams discovery cache so the team doesn't reappear on next load.
+        // The key must match exactly what fetchTeams uses: `teams_discover_${email}`
+        try { sessionStorage.removeItem(`teams_discover_${userId}`) } catch (e) { }
+
         // IMPORTANT: no await here
         getAuthHeaders()
             .then((authHeaders) => {
                 const headers = { "Content-Type": "application/json", ...authHeaders }
-
-                // NOTE: body should match the new /api/teams/apply route (no applicantId)
                 return fetch("/api/teams/apply", {
                     method: "POST",
                     headers: headers as HeadersInit,
@@ -268,14 +281,19 @@ export function SwipeDeck() {
                 })
             })
             .then(async (res) => {
-                if (!res) return // handle void return if fetch fails earlier (though promise chain usually flows)
+                if (!res) return
+                if (res.status === 409) {
+                    // Application already exists — this is safe to ignore silently.
+                    // The team has already been removed from the UI via optimistic update.
+                    return
+                }
                 if (!res.ok) {
                     console.error("Apply failed:", await res.text())
-                    // Optional: re-fetch teams or rollback optimistic UI here
                 }
             })
             .catch((err) => console.error("Apply error:", err))
     }, [teamTarget, getAuthHeaders])
+
 
     const handleCancelMessage = useCallback(() => {
         setMessageTarget(null)
@@ -301,6 +319,16 @@ export function SwipeDeck() {
             setExitDirection(null)
             setIsAnimating(false)
         }, 350)
+
+        // Clear profiles cache so this swiped profile doesn't reappear on refresh
+        try {
+            const keysToRemove: string[] = []
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const k = sessionStorage.key(i)
+                if (k && k.startsWith('profiles_')) keysToRemove.push(k)
+            }
+            keysToRemove.forEach(k => sessionStorage.removeItem(k))
+        } catch (e) { }
 
         try {
             const email = localStorage.getItem("user_email")
@@ -332,12 +360,18 @@ export function SwipeDeck() {
             setIsAnimating(true)
             setExitDirection("left")
             setTimeout(() => {
-                setAllTeams(prev => prev.filter(t => t.id !== currentTeam.id)) // Remove from allTeams
+                setAllTeams(prev => prev.filter(t => t.id !== currentTeam.id))
                 setExitDirection(null)
                 setIsAnimating(false)
             }, 350)
+            // Clear cache so skipped team doesn't reappear on next load
+            const userId = localStorage.getItem("user_email")
+            if (userId) {
+                try { sessionStorage.removeItem(`teams_discover_${userId}`) } catch (e) { }
+            }
         }
     }, [discoverableTeams, isAnimating])
+
 
     const handleSwipeWrapper = (direction: "left" | "right") => {
         if (mode === 'people') handleSwipe(direction)
@@ -395,31 +429,42 @@ export function SwipeDeck() {
 
                         <div className="space-y-3">
                             {myTeams.length > 0 ? (
-                                myTeams.map((team) => (
-                                    <div key={team.id} className="flex items-center justify-between p-4 bg-card border rounded-xl hover:bg-muted/30 transition-colors shadow-sm">
-                                        <div>
-                                            <h3 className="font-semibold text-sm mb-1">{team.title}</h3>
-                                            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                                                <div className="flex items-center gap-1">
-                                                    <Users className="h-3 w-3" />
-                                                    {Math.max(team.member_count || 0, 1)}
+                                myTeams.map((team) => {
+                                    const isAdmin = team.creator?.id === currentUserId ||
+                                        team.members?.some((m: any) => m.user?.id === currentUserId && ['admin', 'Leader', 'creator'].includes(m.role))
+                                    return (
+                                        <div key={team.id} className="flex items-center justify-between p-4 bg-card border rounded-xl hover:bg-muted/30 transition-colors shadow-sm gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <h3 className="font-semibold text-sm mb-1 truncate">{team.title}</h3>
+                                                <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
+                                                    {/* Member count pill — clickable for all users */}
+                                                    <button
+                                                        onClick={() => setMyTeamsMembersTarget(team)}
+                                                        className="flex items-center gap-1 hover:text-primary transition-colors active:scale-95"
+                                                    >
+                                                        <Users className="h-3 w-3" />
+                                                        <span className="underline underline-offset-2">{Math.max(team.member_count || 0, 1)} members</span>
+                                                    </button>
+                                                    <span className={`px-1.5 py-0.5 rounded-full border ${team.status === 'open' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}`}>
+                                                        {team.status === 'open' ? 'Recruiting' : 'Closed'}
+                                                    </span>
                                                 </div>
-                                                <span className={`px-1.5 py-0.5 rounded-full border ${team.status === 'open' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}`}>
-                                                    {team.status === 'open' ? 'Recruiting' : 'Closed'}
-                                                </span>
                                             </div>
-                                        </div>
 
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-8 text-xs"
-                                            onClick={() => router.push(`/main/teams/${team.id}/dashboard`)}
-                                        >
-                                            Manage
-                                        </Button>
-                                    </div>
-                                ))
+                                            {/* Manage button — only for admin/creator */}
+                                            {isAdmin && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 text-xs shrink-0"
+                                                    onClick={() => router.push(`/main/teams/${team.id}/dashboard`)}
+                                                >
+                                                    Manage
+                                                </Button>
+                                            )}
+                                        </div>
+                                    )
+                                })
                             ) : (
                                 <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-xl">
                                     <Briefcase className="h-8 w-8 mx-auto opacity-20 mb-3" />
@@ -572,6 +617,7 @@ export function SwipeDeck() {
                 )}
             </AnimatePresence>
 
+            {/* TeamMembersModal — used from Discover teams view */}
             <TeamMembersModal
                 isOpen={isMembersModalOpen}
                 onClose={() => setIsMembersModalOpen(false)}
@@ -603,6 +649,41 @@ export function SwipeDeck() {
                     return undefined
                 })()}
             />
+
+            {/* TeamMembersModal — used from My Teams list (any user can view members) */}
+            {myTeamsMembersTarget && (
+                <TeamMembersModal
+                    isOpen={!!myTeamsMembersTarget}
+                    onClose={() => setMyTeamsMembersTarget(null)}
+                    members={myTeamsMembersTarget?.members || []}
+                    creator={myTeamsMembersTarget?.creator || null}
+                    teamName={myTeamsMembersTarget?.title || 'Team'}
+                    onMemberClick={(member) => {
+                        const profile = mapRowToProfile(member.user)
+                        setSelectedProfile(profile)
+                        setMyTeamsMembersTarget(null)
+                    }}
+                    onCreatorClick={(creator) => {
+                        const profile = mapRowToProfile(creator)
+                        setSelectedProfile(profile)
+                        setMyTeamsMembersTarget(null)
+                    }}
+                    onChat={(() => {
+                        if (!myTeamsMembersTarget) return undefined
+                        const myEmail = localStorage.getItem("user_email")
+                        const isCreator = myTeamsMembersTarget.creator?.id === myEmail
+                        const isMember = myTeamsMembersTarget.members?.some((m: any) => m.user?.id === myEmail)
+                        if (isCreator || isMember) {
+                            return () => {
+                                selectConversation(`team_${myTeamsMembersTarget.id}`, null, 'group')
+                                router.push('/main/chat')
+                                setMyTeamsMembersTarget(null)
+                            }
+                        }
+                        return undefined
+                    })()}
+                />
+            )}
 
 
 

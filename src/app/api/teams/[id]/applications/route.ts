@@ -142,20 +142,45 @@ export async function POST(
 
     try {
         if (action === 'accept') {
-            // 1. Mark application as accepted
-            const { error: appError } = await supabaseAdmin
+            // Fetch current application to check status (idempotency)
+            const { data: currentApp } = await supabaseAdmin
+                .from('team_applications')
+                .select('id, status, applicant_id, team_id')
+                .eq('team_id', teamId)
+                .eq('applicant_id', targetUserId)
+                .maybeSingle();
+
+            const appId = applicationId || currentApp?.id;
+
+            // Idempotency: if already accepted, just ensure membership exists
+            if (currentApp?.status === 'accepted') {
+                await supabaseAdmin.from('team_members').upsert(
+                    { team_id: teamId, user_id: targetUserId, role: 'member' },
+                    { onConflict: 'team_id,user_id' }
+                );
+                return NextResponse.json({ success: true, idempotent: true });
+            }
+
+            // 1. Mark application as accepted (transition guard: only flip pending→accepted)
+            const { data: updatedRows, error: appError } = await supabaseAdmin
                 .from('team_applications')
                 .update({ status: 'accepted' })
                 .eq('team_id', teamId)
-                .eq('applicant_id', targetUserId);
+                .eq('applicant_id', targetUserId)
+                .eq('status', 'pending')
+                .select('id,status');
 
             if (appError) {
                 console.error('Error accepting application:', appError);
                 return NextResponse.json({ error: appError.message }, { status: 500 });
             }
 
+            if (!updatedRows || updatedRows.length === 0) {
+                // Race condition: another request already handled this
+                return NextResponse.json({ success: true, idempotent: true });
+            }
+
             // 2. Add applicant to team_members as 'member'
-            // NOTE: DB constraint requires lowercase 'member' (not 'Member')
             const { error: memberError } = await supabaseAdmin
                 .from('team_members')
                 .upsert(
@@ -165,7 +190,40 @@ export async function POST(
 
             if (memberError) {
                 console.error('Error adding accepted member to team_members:', memberError);
+                // Roll back to pending to prevent accepted-without-membership
+                await supabaseAdmin
+                    .from('team_applications')
+                    .update({ status: 'pending' })
+                    .eq('team_id', teamId)
+                    .eq('applicant_id', targetUserId);
                 return NextResponse.json({ error: memberError.message }, { status: 500 });
+            }
+
+            // 3. Create a match record between owner and new member for DMs
+            const { data: teamRow } = await supabaseAdmin
+                .from('teams')
+                .select('creator_id')
+                .eq('id', teamId)
+                .maybeSingle();
+
+            if (teamRow?.creator_id) {
+                const ownerId = teamRow.creator_id;
+                const { data: existingMatch } = await supabaseAdmin
+                    .from('matches')
+                    .select('id')
+                    .or(`and(user1_id.eq.${ownerId},user2_id.eq.${targetUserId}),and(user1_id.eq.${targetUserId},user2_id.eq.${ownerId})`)
+                    .maybeSingle();
+
+                if (!existingMatch) {
+                    await supabaseAdmin.from('matches').insert({
+                        id: `match_${Date.now()}_${appId || teamId}`,
+                        user1_id: ownerId,
+                        user2_id: targetUserId,
+                        created_at: new Date().toISOString(),
+                        last_message: 'Joined the team 🎉',
+                        last_message_at: new Date().toISOString()
+                    });
+                }
             }
 
         } else if (action === 'reject') {

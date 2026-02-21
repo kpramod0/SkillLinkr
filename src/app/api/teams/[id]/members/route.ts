@@ -123,14 +123,14 @@ export async function PUT(
         .select('role')
         .eq('team_id', teamId)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
     // Also check if they are the team creator
     const { data: teamRecord } = await supabaseAdmin
         .from('teams')
         .select('creator_id')
         .eq('id', teamId)
-        .single();
+        .maybeSingle();
 
     const isCreator = teamRecord?.creator_id === userId;
     const isAdmin = isCreator || ['admin', 'Leader', 'creator'].includes(requesterRecord?.role);
@@ -174,13 +174,13 @@ export async function DELETE(
             .select('role')
             .eq('team_id', teamId)
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
 
         const { data: teamRecord } = await supabaseAdmin
             .from('teams')
             .select('creator_id')
             .eq('id', teamId)
-            .single();
+            .maybeSingle();
 
         const isCreator = teamRecord?.creator_id === userId;
         const isAdmin = isCreator || ['admin', 'Leader', 'creator'].includes(requesterRecord?.role);

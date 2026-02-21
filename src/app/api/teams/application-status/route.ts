@@ -116,15 +116,14 @@ export async function POST(req: Request) {
                         { onConflict: 'team_id,user_id' }
                     );
 
-                    // NEW: Create a Match between Owner and Applicant to allow DMs
+                    // Ensure match exists between owner and applicant for DMs
                     const ownerId = team.creator_id;
                     const applicantId = app.applicant_id;
-
                     const { data: existingMatch } = await supabaseAdmin
                         .from('matches')
                         .select('id')
                         .or(`and(user1_id.eq.${ownerId},user2_id.eq.${applicantId}),and(user1_id.eq.${applicantId},user2_id.eq.${ownerId})`)
-                        .single();
+                        .maybeSingle();
 
                     if (!existingMatch) {
                         await supabaseAdmin.from('matches').insert({
@@ -170,6 +169,30 @@ export async function POST(req: Request) {
                     .eq('status', 'accepted');
 
                 return NextResponse.json({ error: 'Failed to add member' }, { status: 500 });
+            }
+
+            // Create a Match between owner and applicant to allow direct messaging
+            const ownerId = team.creator_id;
+            const applicantId = app.applicant_id;
+            const { data: existingMatch } = await supabaseAdmin
+                .from('matches')
+                .select('id')
+                .or(`and(user1_id.eq.${ownerId},user2_id.eq.${applicantId}),and(user1_id.eq.${applicantId},user2_id.eq.${ownerId})`)
+                .maybeSingle();
+
+            if (!existingMatch) {
+                const { error: matchErr } = await supabaseAdmin.from('matches').insert({
+                    id: `match_${Date.now()}_${app.id}`,
+                    user1_id: ownerId,
+                    user2_id: applicantId,
+                    created_at: new Date().toISOString(),
+                    last_message: `Joined team "${teamTitle}" 🎉`,
+                    last_message_at: new Date().toISOString()
+                });
+                if (matchErr) {
+                    console.error('[AppStatus] Failed to create match for team members:', matchErr);
+                    // Non-fatal: membership was already added, so we do not roll back.
+                }
             }
 
             // Notify applicant

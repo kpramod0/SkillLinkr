@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { updateReputation, REP_POINTS } from '@/lib/reputation';
+
+// Force dynamic so Next.js never caches this route at the CDN/edge layer
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
     try {
@@ -12,7 +15,7 @@ export async function POST(req: Request) {
 
         // Handle Star (Super Like)
         if (action === 'star') {
-            const { error } = await supabase
+            const { error } = await supabaseAdmin
                 .from('stars')
                 .upsert({ user_id: userId, starred_id: targetId }, { onConflict: 'user_id,starred_id' });
 
@@ -21,15 +24,13 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: 'Failed to star' }, { status: 500 });
             }
 
-            // Award reputation to the person being starred
             await updateReputation(targetId, REP_POINTS.STARRED, 'received_star');
-
             return NextResponse.json({ success: true, message: 'Starred user' });
         }
 
         // Handle Unstar
         if (action === 'unstar') {
-            const { error } = await supabase
+            const { error } = await supabaseAdmin
                 .from('stars')
                 .delete()
                 .eq('user_id', userId)
@@ -42,20 +43,12 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: true, message: 'Unstarred user' });
         }
 
-        // Handle Pass
+        // Handle Pass (Reject)
         if (action === 'pass') {
-            const { error } = await supabase
+            // Record the current user's pass swipe (idempotent upsert)
+            const { error } = await supabaseAdmin
                 .from('swipes')
                 .upsert({ swiper_id: userId, target_id: targetId, action: 'pass' }, { onConflict: 'swiper_id,target_id' });
-
-            // If we are passing (rejecting) someone who liked us, we MUST delete their like
-            // so they can potentially show up again (or at least we acknowledge the rejection processed)
-            // This satisfies: "If He Reject my Request then he again start appearing in my Discover"
-            await supabase
-                .from('swipes')
-                .delete()
-                .eq('swiper_id', targetId)
-                .eq('target_id', userId);
 
             if (error) {
                 console.error('Pass error:', error);
@@ -64,20 +57,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: true, message: 'Passed user' });
         }
 
-        // Handle Like
+        // Handle Like (Accept a request or send a new one)
         if (action === 'like') {
-            // Check if target already liked user (Mutual Match)
-            const { data: targetSwipe } = await supabase
-                .from('swipes')
-                .select('action')
-                .eq('swiper_id', targetId)
-                .eq('target_id', userId)
-                .eq('action', 'like')
-                .single();
-
-            // Record the swipe
-            let swipeError: any = null;
-            const { error: firstError } = await supabase
+            // RACE-CONDITION FIX: Write OWN swipe FIRST, then check if target already liked.
+            // This ensures concurrent likes correctly detect a mutual match.
+            const { error: firstError } = await supabaseAdmin
                 .from('swipes')
                 .upsert({ swiper_id: userId, target_id: targetId, action: 'like', message: message || null }, { onConflict: 'swiper_id,target_id' });
 
@@ -86,19 +70,29 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: 'Failed to like' }, { status: 500 });
             }
 
-            if (targetSwipe) {
-                // Mutual like! Create match
-                const matchId = `match_${Date.now()}`;
+            // Now check if the other user already liked us (mutual match detection)
+            const { data: targetSwipe } = await supabaseAdmin
+                .from('swipes')
+                .select('action')
+                .eq('swiper_id', targetId)
+                .eq('target_id', userId)
+                .eq('action', 'like')
+                .maybeSingle();
 
-                // Check if match already exists - IMPORTANT: Prevent duplicate match points
-                const { data: existingMatch } = await supabase
+            if (targetSwipe) {
+                // === MUTUAL MATCH ===
+                // Check if match already exists to prevent duplicates
+                const { data: existingMatch } = await supabaseAdmin
                     .from('matches')
                     .select('id')
                     .or(`and(user1_id.eq.${userId},user2_id.eq.${targetId}),and(user1_id.eq.${targetId},user2_id.eq.${userId})`)
-                    .single();
+                    .maybeSingle();
+
+                let matchId = existingMatch?.id;
 
                 if (!existingMatch) {
-                    const { error: matchError } = await supabase
+                    matchId = `match_${Date.now()}`;
+                    const { error: matchError } = await supabaseAdmin
                         .from('matches')
                         .insert({
                             id: matchId,
@@ -117,23 +111,23 @@ export async function POST(req: Request) {
                         await updateReputation(targetId, REP_POINTS.MATCHED, 'match_made');
 
                         // Fetch names for notification messages
-                        const { data: userProfile } = await supabase
+                        const { data: userProfile } = await supabaseAdmin
                             .from('profiles')
                             .select('first_name, last_name')
                             .eq('id', userId)
-                            .single();
+                            .maybeSingle();
 
-                        const { data: targetProfile } = await supabase
+                        const { data: targetProfile } = await supabaseAdmin
                             .from('profiles')
                             .select('first_name, last_name')
                             .eq('id', targetId)
-                            .single();
+                            .maybeSingle();
 
                         const userName = userProfile?.first_name || 'Someone';
                         const targetName = targetProfile?.first_name || 'Someone';
 
-                        // Notify User A (original liker) that their request was accepted
-                        await supabase.from('notifications').insert({
+                        // Notify the person whose like was accepted (the original liker)
+                        await supabaseAdmin.from('notifications').insert({
                             user_id: targetId,
                             type: 'match',
                             title: 'Request Accepted! 🎉',
@@ -141,8 +135,8 @@ export async function POST(req: Request) {
                             data: { matchId, otherUserId: userId },
                         });
 
-                        // Notify User B (who accepted) about the new match
-                        await supabase.from('notifications').insert({
+                        // Notify the person who accepted
+                        await supabaseAdmin.from('notifications').insert({
                             user_id: userId,
                             type: 'match',
                             title: 'New Match! 🎉',
@@ -155,21 +149,20 @@ export async function POST(req: Request) {
                 return NextResponse.json({
                     success: true,
                     matched: true,
-                    matchId: existingMatch?.id || matchId
+                    matchId: matchId
                 });
             }
 
             // Just a like (Pending) — notify the target that someone liked them
-            // Fetch liker's name for the notification
-            const { data: likerProfile } = await supabase
+            const { data: likerProfile } = await supabaseAdmin
                 .from('profiles')
                 .select('first_name')
                 .eq('id', userId)
-                .single();
+                .maybeSingle();
 
             const likerName = likerProfile?.first_name || 'Someone';
 
-            await supabase.from('notifications').insert({
+            await supabaseAdmin.from('notifications').insert({
                 user_id: targetId,
                 type: 'like',
                 title: 'New Request! 💜',
@@ -182,18 +175,24 @@ export async function POST(req: Request) {
 
         // Handle Unmatch
         if (action === 'unmatch') {
-            // Remove match
-            await supabase
+            // Remove match record in both directions
+            await supabaseAdmin
                 .from('matches')
                 .delete()
                 .or(`and(user1_id.eq.${userId},user2_id.eq.${targetId}),and(user1_id.eq.${targetId},user2_id.eq.${userId})`);
 
-            // Remove swipe record
-            await supabase
+            // Remove BOTH swipe records (bidirectional) so users can interact again
+            await supabaseAdmin
                 .from('swipes')
                 .delete()
                 .eq('swiper_id', userId)
                 .eq('target_id', targetId);
+
+            await supabaseAdmin
+                .from('swipes')
+                .delete()
+                .eq('swiper_id', targetId)
+                .eq('target_id', userId);
 
             return NextResponse.json({ success: true, message: 'Unmatched user' });
         }

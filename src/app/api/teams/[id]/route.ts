@@ -1,8 +1,24 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createClient } from '@supabase/supabase-js';
 
-// Helper to check admin status
-// Returns true if user is a member with an admin role, OR if they are the original creator
+export const dynamic = 'force-dynamic';
+
+function getSupabaseAuth() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    return createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
+}
+
+async function requireAuthEmail(req: Request): Promise<string | null> {
+    const authHeader = req.headers.get('authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return null;
+    const { data, error } = await getSupabaseAuth().auth.getUser(token);
+    if (error || !data?.user?.email) return null;
+    return data.user.email;
+}
+
 async function isTeamAdmin(teamId: string, userId: string) {
     const supabase = supabaseAdmin;
 
@@ -12,19 +28,16 @@ async function isTeamAdmin(teamId: string, userId: string) {
         .select('role')
         .eq('team_id', teamId)
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
-    if (memberData && ['admin', 'Leader', 'creator', 'member'].includes(memberData.role)) {
-        // Check if specifically admin role
-        if (['admin', 'Leader', 'creator'].includes(memberData.role)) return true;
-    }
+    if (memberData && ['admin', 'Leader', 'creator'].includes(memberData.role)) return true;
 
     // Fallback: Check if user is the team creator (for old teams without trigger)
     const { data: teamData } = await supabase
         .from('teams')
         .select('creator_id')
         .eq('id', teamId)
-        .single();
+        .maybeSingle();
 
     if (teamData && teamData.creator_id === userId) {
         // Auto-repair: ensure creator is in team_members as admin
@@ -123,14 +136,26 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const teamId = (await params).id;
-    const { userId, title, description, roles_needed, skills_required, status } = await request.json();
 
-    if (!userId) {
+    // Auth: try Bearer token first (production), fall back to body userId (custom auth)
+    const authEmail = await requireAuthEmail(request);
+    const body = await request.json();
+    const { userId, title, description, roles_needed, skills_required, status } = body;
+
+    // Resolved identity — authenticated email takes priority over body userId
+    const actingUser = authEmail || userId;
+
+    if (!actingUser) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Prevent impersonation if both are present and don't match
+    if (authEmail && userId && userId !== authEmail) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // Verify Admin
-    const isAdmin = await isTeamAdmin(teamId, userId);
+    const isAdmin = await isTeamAdmin(teamId, actingUser);
     if (!isAdmin) {
         return NextResponse.json({ error: 'Forbidden: Admin access only' }, { status: 403 });
     }
