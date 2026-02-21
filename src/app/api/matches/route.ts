@@ -5,6 +5,10 @@ import { rowToProfile } from '@/lib/db-helpers';
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
+    const q = searchParams.get('q')?.toLowerCase();
+    const genders = searchParams.get('genders')?.split(',').filter(Boolean);
+    const years = searchParams.get('years')?.split(',').filter(Boolean);
+    const domains = searchParams.get('domains')?.split(',').filter(Boolean);
 
     if (!userId) {
         return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
@@ -27,12 +31,30 @@ export async function GET(req: Request) {
         }
 
         // Get the other user's profile for each match
-        const otherUserIds = matches.map(m => m.user1_id === userId ? m.user2_id : m.user1_id);
+        const otherUserIds = matches.map((m: any) => m.user1_id === userId ? m.user2_id : m.user1_id);
 
-        const { data: profiles, error: profileError } = await supabase
+        let query = supabase
             .from('profiles')
             .select('*')
             .in('id', otherUserIds);
+
+        // Apply Filters
+        if (genders && genders.length > 0 && !genders.includes('Any')) {
+            query = query.in('gender', genders);
+        }
+        if (years && years.length > 0) {
+            query = query.in('year', years);
+        }
+        if (domains && domains.length > 0) {
+            query = query.overlaps('domains', domains);
+        }
+
+        // Search query (simple name search to start)
+        if (q) {
+            query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+        }
+
+        const { data: profiles, error: profileError } = await query;
 
         if (profileError) {
             console.error('Error fetching matched profiles:', profileError);

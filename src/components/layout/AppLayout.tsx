@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Users, Flame, MessageSquare, Heart, User as UserIcon, Sun, Moon, Check, X, Trophy } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -26,15 +26,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         if (pathname.startsWith('/main/chats') || pathname.startsWith('/main/chat')) clearChatsBadge();
     }, [pathname, clearLikesBadge, clearChatsBadge]);
 
-
-    const navItems = [
+    const navItems = useMemo(() => [
         { href: "/main/people", icon: Users, label: "People", count: 0 },
         { href: "/main/discover", icon: Flame, label: "Discover", count: 0 },
         { href: "/main/likes", icon: Heart, label: "Likes", count: badges.likes },
         { href: "/main/chat", icon: MessageSquare, label: "Messages", count: badges.chats },
         { href: "/main/leaderboard", icon: Trophy, label: "Rank", count: 0 },
         { href: "/main/profile", icon: UserIcon, label: "Profile", count: 0 },
-    ];
+    ], [badges.likes, badges.chats]);
 
 
 
@@ -78,7 +77,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
                     {/* Nav Items */}
                     <nav className="flex-1 flex flex-col gap-1 px-3">
-                        {navItems.map((item) => {
+                        {navItems.map((item: any) => {
                             const isActive = pathname.startsWith(item.href);
                             const Icon = item.icon;
                             return (
@@ -216,7 +215,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     "h-20 border-t bg-background/80 backdrop-blur-md pb-6 pt-4 px-6 items-center justify-between z-50",
                     isChatOpen ? "hidden md:flex" : "flex"
                 )}>
-                    {navItems.map((item) => {
+                    {navItems.map((item: any) => {
                         const isActive = pathname.startsWith(item.href);
                         const Icon = item.icon;
                         return (

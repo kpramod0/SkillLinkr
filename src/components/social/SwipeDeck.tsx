@@ -6,20 +6,22 @@ import { Check, X, Star, RefreshCcw, Briefcase, Plus } from "lucide-react"
 import { SwipeCard } from "./SwipeCard"
 import { UserProfile } from "@/types"
 import { Button } from "@/components/ui/button"
-import { ProfileDetailModal } from "./ProfileDetailModal"
-import { ConnectionMessageModal } from "./ConnectionMessageModal"
 import { useDiscovery } from "@/context/DiscoveryContext"
 import { DiscoveryToggle } from "./DiscoveryToggle"
 import { TeamCard } from "./TeamCard"
-import { CreateTeamModal } from "./CreateTeamModal"
-import { TeamApplicationModal } from "./TeamApplicationModal"
-import { TeamMembersModal } from "./TeamMembersModal"
 import { Users } from "lucide-react"
 import { mapRowToProfile } from "@/lib/profileUtils"
 import { useRouter } from "next/navigation"
 import { useChat } from "@/context/ChatContext"
-import { MyTeamsModal } from "./MyTeamsModal"
 import { createClient } from "@supabase/supabase-js"
+import dynamic from "next/dynamic"
+
+const ProfileDetailModal = dynamic(() => import("./ProfileDetailModal").then(mod => mod.ProfileDetailModal))
+const ConnectionMessageModal = dynamic(() => import("./ConnectionMessageModal").then(mod => mod.ConnectionMessageModal))
+const CreateTeamModal = dynamic(() => import("./CreateTeamModal").then(mod => mod.CreateTeamModal))
+const TeamApplicationModal = dynamic(() => import("./TeamApplicationModal").then(mod => mod.TeamApplicationModal))
+const TeamMembersModal = dynamic(() => import("./TeamMembersModal").then(mod => mod.TeamMembersModal))
+const MyTeamsModal = dynamic(() => import("./MyTeamsModal").then(mod => mod.MyTeamsModal))
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -66,8 +68,8 @@ export function SwipeDeck() {
             const cached = sessionStorage.getItem(key);
             if (cached) {
                 const { data, timestamp } = JSON.parse(cached);
-                // Cache valid for 5 minutes
-                if (Date.now() - timestamp < 5 * 60 * 1000) return data;
+                // Cache valid for 2 minutes for swiping
+                if (Date.now() - timestamp < 2 * 60 * 1000) return data;
             }
         } catch (e) { }
         return null;
@@ -82,53 +84,39 @@ export function SwipeDeck() {
     // Fetch profiles from API
     useEffect(() => {
         const fetchProfiles = async () => {
-            const cacheKey = `profiles_${filters.genders?.join('_') || 'all'}`;
+            const email = localStorage.getItem("user_email")
+            const filterParams = new URLSearchParams()
+            if (email) filterParams.set('userId', email)
+
+            if (filters.genders?.length > 0 && !filters.genders.includes('Any')) {
+                filterParams.set('genders', filters.genders.join(','))
+            }
+            if (filters.years?.length > 0) {
+                filterParams.set('years', filters.years.join(','))
+            }
+            if (filters.domains?.length > 0) {
+                filterParams.set('domains', filters.domains.join(','))
+            }
+
+            const cacheKey = `profiles_${filterParams.toString()}`;
             const cached = getCachedList(cacheKey);
+
             if (cached) {
                 setProfiles(cached);
                 setLoading(false);
-            } else {
-                setLoading(true);
+                return;
             }
 
+            setLoading(true);
+
             try {
-                const email = localStorage.getItem("user_email")
-                const url = email ? `/api/profiles?userId=${encodeURIComponent(email)}` : '/api/profiles'
+                const url = `/api/profiles?${filterParams.toString()}`
                 const res = await fetch(url)
                 if (!res.ok) throw new Error('Failed to fetch profiles')
                 const data: UserProfile[] = await res.json()
 
-                let filtered = data
-
-                if (email) {
-                    const matchRes = await fetch(`/api/matches?userId=${email}`)
-                    let matchedIds = new Set<string>();
-                    if (matchRes.ok) {
-                        const matches: UserProfile[] = await matchRes.json()
-                        matches.forEach(m => matchedIds.add(m.id))
-                    }
-
-                    filtered = filtered.filter(p =>
-                        p.id !== email &&
-                        !blockedIds.has(p.id) &&
-                        !matchedIds.has(p.id)
-                    )
-                }
-
-                // Apply Filters
-                if (filters.genders && filters.genders.length > 0 && !filters.genders.includes('Any')) {
-                    filtered = filtered.filter(p => filters.genders.includes(p.personal.gender))
-                }
-                if (filters.years && filters.years.length > 0) {
-                    filtered = filtered.filter(p => filters.years.includes(p.professionalDetails.year))
-                }
-                if (filters.domains && filters.domains.length > 0) {
-                    filtered = filtered.filter(p => p.professionalDetails?.domains?.some(domain => filters.domains.includes(domain)))
-                }
-                if (filters.skills && filters.skills.length > 0) {
-                    const lowercaseFilters = filters.skills.map(s => s.toLowerCase())
-                    filtered = filtered.filter(p => p.professionalDetails?.skills?.map(s => s.name.toLowerCase()).some(s => lowercaseFilters.includes(s)))
-                }
+                // Final safety check (blocked users)
+                const filtered = data.filter(p => !blockedIds.has(p.id))
 
                 setProfiles(filtered)
                 setCachedList(cacheKey, filtered);
@@ -140,19 +128,21 @@ export function SwipeDeck() {
         }
 
         const fetchTeams = async () => {
-            const cacheKey = `teams_${mode}`;
+            const email = localStorage.getItem("user_email")
+            const filter = mode === 'my-teams' ? 'mine' : 'discover';
+            const cacheKey = `teams_${filter}_${email || 'guest'}`;
+
             const cached = getCachedList(cacheKey);
             if (cached) {
                 setAllTeams(cached);
                 setLoading(false);
-            } else {
-                setLoading(true);
+                return;
             }
 
+            setLoading(true);
+
             try {
-                const email = localStorage.getItem("user_email")
-                const filter = mode === 'my-teams' ? 'mine' : 'discover';
-                const url = email ? `/api/teams?userId=${email}&filter=${filter}` : '/api/teams'
+                const url = email ? `/api/teams?userId=${email}&filter=${filter}` : `/api/teams?filter=${filter}`
 
                 const headers = await getAuthHeaders()
                 const res = await fetch(url, { headers: headers as HeadersInit })
@@ -183,7 +173,7 @@ export function SwipeDeck() {
             }
         }
         getUser()
-    }, [filters, contextLoading, mode, getAuthHeaders])
+    }, [filters, contextLoading, mode, getAuthHeaders, blockedIds])
 
     const handleLikeIntent = useCallback((action: "like" | "star") => {
         if (profiles.length === 0 || isAnimating) return

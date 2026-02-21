@@ -19,6 +19,16 @@ export default function PeoplePage() {
     const [people, setPeople] = useState<UserProfile[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+
+    // Debounce search query
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
     useEffect(() => {
         const fetchPeople = async () => {
             setIsLoading(true);
@@ -26,9 +36,25 @@ export default function PeoplePage() {
                 const email = localStorage.getItem("user_email");
                 if (!email) return;
 
+                const params = new URLSearchParams();
+                params.set('userId', email);
+                if (debouncedSearch) params.set('q', debouncedSearch);
+
+                if (activeTab !== 'starred') {
+                    if (filters.genders && filters.genders.length > 0 && !filters.genders.includes('Any')) {
+                        params.set('genders', filters.genders.join(','));
+                    }
+                    if (filters.years && filters.years.length > 0) {
+                        params.set('years', filters.years.join(','));
+                    }
+                    if (filters.domains && filters.domains.length > 0) {
+                        params.set('domains', filters.domains.join(','));
+                    }
+                }
+
                 const endpoint = activeTab === 'connections'
-                    ? `/api/matches?userId=${email}`
-                    : `/api/starred?userId=${email}`;
+                    ? `/api/matches?${params.toString()}`
+                    : `/api/starred?${params.toString()}`;
 
                 const res = await fetch(endpoint);
                 if (res.ok) {
@@ -43,43 +69,10 @@ export default function PeoplePage() {
         };
 
         fetchPeople();
-    }, [activeTab]);
+    }, [activeTab, debouncedSearch, filters]);
 
-    const filteredPeople = people.filter(person => {
-        // 0. Blocked Users
-        if (blockedIds.has(person.id)) return false;
-
-        // 1. Context Filters (AND Logic) -- ONLY for Connections/Discover, NOT Starred
-        if (activeTab !== 'starred') {
-            // Gender Filter
-            if (filters.genders && filters.genders.length > 0 && !filters.genders.includes('Any')) {
-                if (!filters.genders.includes(person.personal.gender)) return false;
-            }
-
-            // Year Filter
-            if (filters.years && filters.years.length > 0) {
-                if (!filters.years.includes(person.professionalDetails.year)) return false;
-            }
-
-            // Tech Domain Filter
-            if (filters.domains && filters.domains.length > 0) {
-                const hasDomain = person.professionalDetails.domains.some(domain =>
-                    filters.domains.includes(domain)
-                );
-                if (!hasDomain) return false;
-            }
-        }
-
-        // 2. Search Query
-        const query = searchQuery.toLowerCase();
-        if (!query) return true; // Pass if no search query
-
-        const fullName = `${person.personal.firstName} ${person.personal.lastName}`.toLowerCase();
-        const domains = person.professionalDetails.domains.join(" ").toLowerCase();
-        const year = `${person.professionalDetails.year} year`.toLowerCase();
-
-        return fullName.includes(query) || domains.includes(query) || year.includes(query);
-    });
+    // Simple client-side safety filter for blocked users (though API should handle it)
+    const filteredPeople = people.filter(person => !blockedIds.has(person.id));
 
     return (
         <div className="p-4 space-y-6 pb-24">

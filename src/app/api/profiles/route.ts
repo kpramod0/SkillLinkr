@@ -7,6 +7,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const genders = searchParams.get('genders')?.split(',').filter(Boolean);
+    const years = searchParams.get('years')?.split(',').filter(Boolean);
+    const domains = searchParams.get('domains')?.split(',').filter(Boolean);
 
     try {
         let query = supabase
@@ -14,32 +17,36 @@ export async function GET(request: Request) {
             .select('*')
             .eq('onboarding_completed', true);
 
+        // Apply Filters on the server side
+        if (genders && genders.length > 0 && !genders.includes('Any')) {
+            query = query.in('gender', genders);
+        }
+        if (years && years.length > 0) {
+            query = query.in('year', years);
+        }
+        // If domains are provided, we filter by array containment if possible, 
+        // but for now let's just use .overlaps if domains is an array column.
+        if (domains && domains.length > 0) {
+            query = query.overlaps('domains', domains);
+        }
+
         // If userId is provided, exclude users they have already matched/requested with
         if (userId) {
-            // 1. Get all matches involving this user (pending, accepted, rejected)
-            // Actually, we want to exclude Pending and Accepted. Rejected might be allowed to reappear?
-            // User said: "If B rejects user A request then again, A will be allowed to send request" -> So don't exclude rejected.
-            // But wait, if A sends to B (pending), B should not see A.
-
-            // 1. Get all matches (Mutual)
-            const { data: matches } = await supabase
-                .from('matches')
-                .select('user1_id, user2_id, status')
-                .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
-
-            // 2. Get all Swipes (Unidirectional: Likes, Passes, Stars)
-            // If I already swiped on them, I shouldn't see them again
-            // UPDATE: User wants 'passed' profiles to reappear. So only exclude if action is NOT 'pass' (e.g. 'like', 'superlike')
+            // Exclude self and previously interacted profiles
             const { data: swipes } = await supabase
                 .from('swipes')
                 .select('target_id')
                 .eq('swiper_id', userId)
                 .neq('action', 'pass');
 
-            const excludedIds = new Set<string>();
-            excludedIds.add(userId); // Exclude self
+            const { data: matches } = await supabase
+                .from('matches')
+                .select('user1_id, user2_id, status')
+                .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
 
-            // Exclude Matches (Pending/Accepted)
+            const excludedIds = new Set<string>();
+            excludedIds.add(userId);
+
             if (matches) {
                 matches.forEach((m: any) => {
                     if (m.status !== 'rejected') {
@@ -48,15 +55,13 @@ export async function GET(request: Request) {
                 });
             }
 
-            // Exclude Swipes (I already acted on them)
             if (swipes) {
-                swipes.forEach((s: any) => {
-                    excludedIds.add(s.target_id);
-                });
+                swipes.forEach((s: any) => excludedIds.add(s.target_id));
             }
 
             if (excludedIds.size > 0) {
-                query = query.not('id', 'in', `(${Array.from(excludedIds).join(',')})`);
+                // Quoting IDs to handle special characters in emails/UUIDs
+                query = query.not('id', 'in', `(${Array.from(excludedIds).map(id => `"${id}"`).join(',')})`);
             }
         }
 
