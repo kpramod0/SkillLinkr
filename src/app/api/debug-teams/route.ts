@@ -21,6 +21,10 @@ export async function GET(req: Request) {
 
     // Safely check what keys exist in process.env (without showing values!)
     const availableKeys = Object.keys(process.env);
+
+    // Get prefixes of all keys to help identify if Amplify renamed it
+    const keyPrefixes = availableKeys.map(k => k.length > 4 ? `${k.substring(0, 4)}...` : k);
+
     const hasServiceKey = availableKeys.includes('SUPABASE_SERVICE_ROLE_KEY');
     const serviceKeyLength = process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0;
 
@@ -55,6 +59,7 @@ export async function GET(req: Request) {
         hasServiceKey,
         serviceKeyLength,
         availableKeysCount: availableKeys.length,
+        keyPrefixes,
         teamMembersFound: teamMembers?.length ?? 0,
         teamMembersError: tmErr ? JSON.stringify(tmErr) : null,
         teamIds,
