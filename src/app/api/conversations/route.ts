@@ -99,31 +99,43 @@ export async function GET(req: Request) {
         const validDirect = directConversations.filter(Boolean) as any[];
 
         // 2) Teams where user is member
-        const { data: teamMembers, error: tmErr } = await db
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', userId);
-
-        if (tmErr) throw tmErr;
-
         let teamConversations: any[] = [];
-        const teamIds = (teamMembers || []).map((t: any) => t.team_id);
+        try {
+            const { data: teamMembers, error: tmErr } = await db
+                .from('team_members')
+                .select('team_id')
+                .eq('user_id', userId);
 
-        if (teamIds.length > 0) {
-            const { data: teams, error: teamsErr } = await db.from('teams').select('*').in('id', teamIds);
-            if (teamsErr) throw teamsErr;
+            if (tmErr) {
+                console.error('[conversations] team_members query error:', JSON.stringify(tmErr));
+            } else {
+                const teamIds = (teamMembers || []).map((t: any) => t.team_id).filter(Boolean);
 
-            teamConversations = (teams || []).map((team: any) => ({
-                id: `team_${team.id}`,
-                dbId: team.id,
-                type: 'group',
-                friendId: null,
-                friendName: team.title,
-                friendPhoto: null,
-                lastMessage: team.last_message,
-                lastMessageAt: team.last_message_at || team.created_at,
-                unreadCount: 0,
-            }));
+                if (teamIds.length > 0) {
+                    const { data: teams, error: teamsErr } = await db
+                        .from('teams')
+                        .select('id, title, last_message, last_message_at, created_at')
+                        .in('id', teamIds);
+
+                    if (teamsErr) {
+                        console.error('[conversations] teams query error:', JSON.stringify(teamsErr));
+                    } else {
+                        teamConversations = (teams || []).map((team: any) => ({
+                            id: `team_${team.id}`,
+                            dbId: team.id,
+                            type: 'group',
+                            friendId: null,
+                            friendName: team.title || 'Team',
+                            friendPhoto: null,
+                            lastMessage: team.last_message || null,
+                            lastMessageAt: team.last_message_at || team.created_at || null,
+                            unreadCount: 0,
+                        }));
+                    }
+                }
+            }
+        } catch (teamErr) {
+            console.error('[conversations] Unexpected error fetching team conversations:', teamErr);
         }
 
         // Merge + sort by lastMessageAt

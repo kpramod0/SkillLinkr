@@ -265,17 +265,11 @@ export async function POST(req: Request) {
         // 2) Add creator as admin member — CRITICAL: this enables dashboard access and member count = 1
         const { error: memberError } = await supabaseAdmin
             .from('team_members')
-            .upsert(
-                { team_id: team.id, user_id: creatorId, role: 'admin' },
-                { onConflict: 'team_id,user_id' }
-            );
+            .insert({ team_id: team.id, user_id: creatorId, role: 'admin', joined_at: new Date().toISOString() });
 
-        if (memberError) {
-            console.error('CRITICAL: Failed to add creator to team_members:', memberError);
-            // Try plain insert as fallback
-            await supabaseAdmin
-                .from('team_members')
-                .insert({ team_id: team.id, user_id: creatorId, role: 'admin' });
+        if (memberError && memberError.code !== '23505') {
+            // 23505 = duplicate key: already a member = fine. Anything else log but don't fail the team creation.
+            console.error('CRITICAL: Failed to add creator to team_members:', JSON.stringify(memberError));
         }
 
         // Return with member_count = 1 immediately

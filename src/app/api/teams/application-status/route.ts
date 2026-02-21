@@ -87,10 +87,12 @@ export async function POST(req: Request) {
 
         // Auto-repair: ensure creator is in team_members as admin if they're not already
         if (isCreator) {
-            await supabaseAdmin.from('team_members').upsert(
-                { team_id: app.team_id, user_id: actingUser, role: 'admin' },
-                { onConflict: 'team_id,user_id' }
+            const { error: creatorMemberErr } = await supabaseAdmin.from('team_members').insert(
+                { team_id: app.team_id, user_id: actingUser, role: 'admin', joined_at: new Date().toISOString() }
             );
+            if (creatorMemberErr && creatorMemberErr.code !== '23505') {
+                console.error('[AppStatus] Failed to auto-repair creator in team_members:', JSON.stringify(creatorMemberErr));
+            }
         }
 
         const teamTitle = team.title || 'the team';
