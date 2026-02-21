@@ -112,14 +112,27 @@ export async function GET(req: Request) {
                 const teamIds = (teamMembers || []).map((t: any) => t.team_id).filter(Boolean);
 
                 if (teamIds.length > 0) {
+                    // Select only guaranteed columns. last_message / last_message_at are optional.
                     const { data: teams, error: teamsErr } = await db
                         .from('teams')
-                        .select('id, title, last_message, last_message_at, created_at')
+                        .select('id, title, created_at')
                         .in('id', teamIds);
 
                     if (teamsErr) {
                         console.error('[conversations] teams query error:', JSON.stringify(teamsErr));
                     } else {
+                        // Separately try to get last_message data (optional columns)
+                        let lastMsgMap: Record<string, { last_message?: string; last_message_at?: string }> = {};
+                        try {
+                            const { data: teamsWithMsg } = await db
+                                .from('teams')
+                                .select('id, last_message, last_message_at')
+                                .in('id', teamIds);
+                            (teamsWithMsg || []).forEach((t: any) => {
+                                lastMsgMap[t.id] = { last_message: t.last_message, last_message_at: t.last_message_at };
+                            });
+                        } catch (_) { /* columns may not exist, fine */ }
+
                         teamConversations = (teams || []).map((team: any) => ({
                             id: `team_${team.id}`,
                             dbId: team.id,
@@ -127,8 +140,8 @@ export async function GET(req: Request) {
                             friendId: null,
                             friendName: team.title || 'Team',
                             friendPhoto: null,
-                            lastMessage: team.last_message || null,
-                            lastMessageAt: team.last_message_at || team.created_at || null,
+                            lastMessage: lastMsgMap[team.id]?.last_message || null,
+                            lastMessageAt: lastMsgMap[team.id]?.last_message_at || team.created_at || null,
                             unreadCount: 0,
                         }));
                     }

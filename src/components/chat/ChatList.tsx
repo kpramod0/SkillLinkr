@@ -1,12 +1,19 @@
 
 "use client"
 
+import { useState } from "react"
 import { useChat } from "@/context/ChatContext"
 import { Search } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
 export function ChatList({ onSelect }: { onSelect?: () => void }) {
     const { conversations, selectedConversationId, selectConversation, isLoading } = useChat()
+    const [searchQuery, setSearchQuery] = useState("")
+
+    // Filter by name (works for both DMs and team names)
+    const filtered = conversations.filter((conv) =>
+        conv.friendName?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
 
     if (isLoading) {
         return <div className="p-4 text-center text-muted-foreground text-sm">Loading chats...</div>
@@ -22,6 +29,8 @@ export function ChatList({ onSelect }: { onSelect?: () => void }) {
                     <input
                         type="text"
                         placeholder="Search chats..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full bg-muted/50 rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                 </div>
@@ -29,14 +38,16 @@ export function ChatList({ onSelect }: { onSelect?: () => void }) {
 
             {/* List */}
             <div className="flex-1 overflow-y-auto">
-                {conversations.length === 0 ? (
+                {filtered.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground text-sm mt-10">
-                        <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">👋</div>
-                        <p>No conversations yet.</p>
-                        <p className="text-xs mt-1">Match with people to start chatting!</p>
+                        <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                            {searchQuery ? "🔍" : "👋"}
+                        </div>
+                        <p>{searchQuery ? `No chats found for "${searchQuery}"` : "No conversations yet."}</p>
+                        {!searchQuery && <p className="text-xs mt-1">Match with people to start chatting!</p>}
                     </div>
                 ) : (
-                    conversations.map((conv) => (
+                    filtered.map((conv) => (
                         <div
                             key={conv.id}
                             onClick={() => {
@@ -56,7 +67,7 @@ export function ChatList({ onSelect }: { onSelect?: () => void }) {
                                             {conv.type === 'group' ? (
                                                 <span className="text-2xl">👥</span>
                                             ) : (
-                                                conv.friendName[0]
+                                                conv.friendName?.[0] || "?"
                                             )}
                                         </div>
                                     )}
@@ -70,7 +81,10 @@ export function ChatList({ onSelect }: { onSelect?: () => void }) {
                                     {conv.lastMessageAt && (
                                         <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
                                             <span className="text-xs text-muted-foreground">
-                                                {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false }).replace("about ", "").replace(" minutes", "m").replace(" hours", "h")}
+                                                {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false })
+                                                    .replace("about ", "")
+                                                    .replace(" minutes", "m")
+                                                    .replace(" hours", "h")}
                                             </span>
                                             {conv.unreadCount && conv.unreadCount > 0 ? (
                                                 <span className="bg-primary text-primary-foreground text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full flex items-center justify-center">
