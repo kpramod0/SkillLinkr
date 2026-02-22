@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Config
+  Enforces HTTPS for all connections. Permits no cleartext traffic.
+  Explicitly trusts system CAs for skilllinkr.com and supabase.co.
+-->
+<network-security-config>
+    <!-- Block all cleartext (HTTP) traffic app-wide -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Explicitly allow HTTPS to production domains -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">skilllinkr.com</domain>
+        <domain includeSubdomains="true">supabase.co</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

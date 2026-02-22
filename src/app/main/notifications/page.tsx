@@ -78,28 +78,30 @@ export default function NotificationsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-background flex flex-col pb-20">
+        <div className="min-h-screen bg-background">
             {/* Header */}
-            <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-muted rounded-full">
-                        <ArrowLeft className="h-6 w-6" />
-                    </button>
-                    <h1 className="text-lg font-bold">Notifications</h1>
+            <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b">
+                <div className="max-w-2xl mx-auto p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-muted rounded-full">
+                            <ArrowLeft className="h-6 w-6" />
+                        </button>
+                        <h1 className="text-lg font-bold">Notifications</h1>
+                    </div>
+                    {notifications.some(n => !n.is_read) && (
+                        <button
+                            onClick={handleMarkAllRead}
+                            className="text-primary text-sm font-medium flex items-center gap-1 hover:bg-primary/10 px-3 py-1.5 rounded-full transition-colors"
+                        >
+                            <CheckCheck className="h-4 w-4" />
+                            Mark all
+                        </button>
+                    )}
                 </div>
-                {notifications.some(n => !n.is_read) && (
-                    <button
-                        onClick={handleMarkAllRead}
-                        className="text-primary text-sm font-medium flex items-center gap-1 hover:bg-primary/10 px-3 py-1.5 rounded-full transition-colors"
-                    >
-                        <CheckCheck className="h-4 w-4" />
-                        Mark all
-                    </button>
-                )}
             </div>
 
             {/* List */}
-            <div className="flex-1">
+            <div className="max-w-2xl mx-auto pb-20">
                 {isLoading ? (
                     <div className="p-8 text-center text-muted-foreground">Loading...</div>
                 ) : notifications.length === 0 ? (
@@ -109,7 +111,7 @@ export default function NotificationsPage() {
                         <p className="text-sm mt-1">Your activity will show up here</p>
                     </div>
                 ) : (
-                    <div className="divide-y">
+                    <div className="divide-y border-x border-border/50">
                         {notifications.map(n => {
                             const icon = n.type === 'like' ? <Heart className="h-5 w-5 text-rose-500 fill-rose-500" />
                                 : n.type === 'match' ? <UserCheck className="h-5 w-5 text-emerald-500" />

@@ -112,19 +112,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
                     {/* Bottom: Notifications + Theme Toggle */}
                     <div className="px-3 mt-4 space-y-2">
-                        {/* Notifications (Desktop Sidebar) */}
-                        <div className={cn(
-                            "flex items-center px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200",
-                            sidebarExpanded ? "justify-start gap-4" : "justify-center"
-                        )}>
-                            <NotificationBell />
+                        <Link
+                            href="/main/notifications"
+                            className={cn(
+                                "flex items-center gap-4 px-3 py-3 rounded-xl transition-all duration-200 group relative",
+                                pathname.startsWith('/main/notifications')
+                                    ? "text-foreground font-bold bg-muted"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                            )}
+                        >
+                            <NotificationBell className={cn("h-6 w-6", pathname.startsWith('/main/notifications') && "fill-current")} />
                             <span className={cn(
-                                "text-sm whitespace-nowrap transition-all duration-300 cursor-default",
+                                "text-sm whitespace-nowrap transition-all duration-300",
                                 sidebarExpanded ? "opacity-100" : "opacity-0 w-0 overflow-hidden"
                             )}>
                                 Notifications
                             </span>
-                        </div>
+                        </Link>
 
                         <button
                             onClick={toggleTheme}
@@ -189,7 +193,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         {pathname === '/main/discover' && <FilterDialog />}
 
                         {/* Notifications (Mobile Header) */}
-                        <NotificationBell />
+                        <Link href="/main/notifications" className="p-2 text-muted-foreground hover:text-foreground">
+                            <NotificationBell className="h-6 w-6" />
+                        </Link>
 
                         <button
                             onClick={toggleTheme}

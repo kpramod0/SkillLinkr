@@ -1,14 +1,15 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "io.kiit.anti"
+    // namespace must match applicationId for correct resource resolution
+    namespace "com.skilllinkr.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.skilllinkr.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +17,28 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+
+    // --- Signing Config for Play Store Release ---
+    signingConfigs {
         release {
+            storeFile file('../../skilllinkr-release.jks')
+            storePassword 'PramoD@HTSp@'
+            keyAlias 'skilllinkr'
+            keyPassword 'PramoD@HTSp@'
+        }
+    }
+
+    buildTypes {
+        debug {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        release {
+            // Full optimization for Play Store AAB
+            minifyEnabled true
+            // shrinkResources must be false when using Remote URL WebView (no local web assets to shrink)
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }
