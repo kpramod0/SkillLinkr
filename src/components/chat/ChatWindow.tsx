@@ -47,23 +47,8 @@ export function ChatWindow() {
     // Check if current chat is a group (logic based on 'type' field)
     const isGroup = currentConversation?.type === 'group'
 
-    // --- Render: Empty State ---
-    // If no conversation is selected, show a placeholder
-    if (!selectedConversationId) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
-                <div className="bg-muted/50 p-4 rounded-full mb-4">
-                    <span className="text-4xl">💭</span>
-                </div>
-                <h3 className="text-lg font-semibold mb-2">Your Messages</h3>
-                <p className="text-sm max-w-xs">Select a conversation from the list to start chatting with your matches.</p>
-            </div>
-        )
-    }
-
     // --- Logic: Typing Indicators ---
-    // PERF: useMemo ensures this only re-computes when typingUsers or messages change,
-    // not on every ChatContext update (e.g., unread count changes).
+    // NOTE: useMemo MUST be before any early returns (Rules of Hooks).
     const typingMessage = useMemo(() => {
         if (typingUsers.size === 0) return null
 
@@ -83,6 +68,20 @@ export function ChatWindow() {
         if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`
         return "Multiple people are typing..."
     }, [typingUsers, isGroup, messages, currentConversation])
+
+    // --- Render: Empty State ---
+    // If no conversation is selected, show a placeholder
+    if (!selectedConversationId) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
+                <div className="bg-muted/50 p-4 rounded-full mb-4">
+                    <span className="text-4xl">💭</span>
+                </div>
+                <h3 className="text-lg font-semibold mb-2">Your Messages</h3>
+                <p className="text-sm max-w-xs">Select a conversation from the list to start chatting with your matches.</p>
+            </div>
+        )
+    }
 
     // --- API: Fetch Full Profile ---
     // Called when clicking a user's avatar/name to show detailed modal
