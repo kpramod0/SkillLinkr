@@ -37,6 +37,9 @@ export function SwipeDeck() {
     const [myTeamsMembersTarget, setMyTeamsMembersTarget] = useState<any | null>(null)
 
     const [loading, setLoading] = useState(true)
+    // PERF: Separate per-mode loading flags so toggling between already-loaded modes
+    // never shows the full spinner — only show spinner on the FIRST load of each mode.
+    const [loadedModes, setLoadedModes] = useState<Set<string>>(new Set())
     const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null)
     const [exitDirection, setExitDirection] = useState<"left" | "right" | null>(null)
     const [isAnimating, setIsAnimating] = useState(false)
@@ -104,11 +107,14 @@ export function SwipeDeck() {
 
             if (cached) {
                 setProfiles(cached);
+                // PERF: Already have data — mark as loaded immediately, no spinner
+                setLoadedModes(prev => new Set(prev).add('people'));
                 setLoading(false);
                 return;
             }
 
-            setLoading(true);
+            // Only show spinner on first load ever for this mode
+            if (!loadedModes.has('people')) setLoading(true);
 
             try {
                 const url = `/api/profiles?${filterParams.toString()}`
@@ -121,6 +127,7 @@ export function SwipeDeck() {
 
                 setProfiles(filtered)
                 setCachedList(cacheKey, filtered);
+                setLoadedModes(prev => new Set(prev).add('people'));
             } catch (error) {
                 console.error("Error fetching swipe profiles:", error)
             } finally {
@@ -136,11 +143,14 @@ export function SwipeDeck() {
             const cached = getCachedList(cacheKey);
             if (cached) {
                 setAllTeams(cached);
+                // PERF: Already have data — mark as loaded, don't show spinner
+                setLoadedModes(prev => new Set(prev).add(filter));
                 setLoading(false);
                 return;
             }
 
-            setLoading(true);
+            // Only show spinner on first-ever load for this mode
+            if (!loadedModes.has(filter)) setLoading(true);
 
             try {
                 const url = email ? `/api/teams?userId=${email}&filter=${filter}` : `/api/teams?filter=${filter}`
@@ -152,6 +162,7 @@ export function SwipeDeck() {
                 const data = await res.json()
                 setAllTeams(data)
                 setCachedList(cacheKey, data);
+                setLoadedModes(prev => new Set(prev).add(filter));
             } catch (error) {
                 console.error("Error fetching teams:", error)
             } finally {
@@ -382,7 +393,9 @@ export function SwipeDeck() {
         handleLikeIntent("star")
     }, [handleLikeIntent])
 
-    if (loading || contextLoading) return <div className="flex h-full items-center justify-center">Loading...</div>
+    // PERF: Only show the blocking spinner on the VERY FIRST load (before any mode is loaded).
+    // After that, mode switches show stale data instantly while refreshing in background.
+    if ((loading || contextLoading) && loadedModes.size === 0) return <div className="flex h-full items-center justify-center">Loading...</div>
 
     return (
         <div className="relative h-full w-full max-w-[calc(100%-24px)] md:max-w-sm mx-auto my-3 md:my-0 overflow-hidden rounded-2xl">

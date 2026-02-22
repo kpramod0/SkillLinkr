@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useMemo } from "react"
 import { useChat } from "@/context/ChatContext"
 import { format } from "date-fns"
 import { AnimatePresence } from "framer-motion"
@@ -62,36 +62,27 @@ export function ChatWindow() {
     }
 
     // --- Logic: Typing Indicators ---
-    // Generates a string like "Alice is typing..." based on `typingUsers` set
-    const typingMessage = (() => {
+    // PERF: useMemo ensures this only re-computes when typingUsers or messages change,
+    // not on every ChatContext update (e.g., unread count changes).
+    const typingMessage = useMemo(() => {
         if (typingUsers.size === 0) return null
 
-        // Get nice names for typing users
         const names: string[] = []
         typingUsers.forEach(uid => {
-            // Case 1: Direct Message - we know it's the friend
             if (!isGroup && currentConversation?.friendId === uid) {
                 names.push(currentConversation.friendName)
-            }
-            // Case 2: Group Chat - try to find name from recent messages or fallback to 'Member'
-            else if (isGroup) {
+            } else if (isGroup) {
                 const msg = messages.find(m => m.sender_id === uid)
-                if (msg) {
-                    names.push(msg.senderName || msg.sender?.first_name || 'Member')
-                } else {
-                    names.push('Member')
-                }
+                names.push(msg?.senderName || msg?.sender?.first_name || 'Member')
             }
         })
 
         if (names.length === 0) return null
-
-        // Format the output string
         if (!isGroup) return "typing..."
         if (names.length === 1) return `${names[0]} is typing...`
         if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`
         return "Multiple people are typing..."
-    })()
+    }, [typingUsers, isGroup, messages, currentConversation])
 
     // --- API: Fetch Full Profile ---
     // Called when clicking a user's avatar/name to show detailed modal

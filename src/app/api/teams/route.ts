@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
@@ -24,23 +26,27 @@ async function enrichTeams(teams: any[]): Promise<any[]> {
     if (!teams || teams.length === 0) return [];
 
     const teamIds = teams.map((t) => t.id);
+    // Collect all creator IDs upfront so we can fetch profiles in parallel with members
+    const creatorIds = teams.map(t => t.creator_id).filter(Boolean);
 
-    // 1) Fetch all member records (regardless of profile) for accurate counting
-    const { data: rawMembers } = await supabaseAdmin
-        .from('team_members')
-        .select('team_id, user_id, role')
-        .in('team_id', teamIds);
+    // PERF: Fetch members AND all creator profiles in PARALLEL instead of sequential.
+    // Step 1 no longer blocks Step 3; they run simultaneously.
+    const [{ data: rawMembers }, { data: creatorProfiles }] = await Promise.all([
+        supabaseAdmin.from('team_members').select('team_id, user_id, role').in('team_id', teamIds),
+        supabaseAdmin.from('profiles')
+            .select('id, first_name, last_name, photos, bio, branch, year, domains, skills, open_to')
+            .in('id', creatorIds),
+    ]);
 
-    // 2) Get all unique user IDs involved (creators + members)
-    const involvedUserIds = new Set<string>();
-    teams.forEach(t => { if (t.creator_id) involvedUserIds.add(t.creator_id); });
-    (rawMembers || []).forEach(m => { if (m.user_id) involvedUserIds.add(m.user_id); });
+    // Collect any member IDs not already in creatorProfiles, then fetch them
+    const fetchedIds = new Set((creatorProfiles || []).map((p: any) => p.id));
+    const memberIds = [...new Set((rawMembers || []).map((m: any) => m.user_id).filter((id: string) => !fetchedIds.has(id)))];
 
-    // 3) Fetch profiles for ALL involved users
-    const { data: allProfiles } = await supabaseAdmin
-        .from('profiles')
-        .select('id, first_name, last_name, photos, bio, branch, year, domains, skills, open_to')
-        .in('id', Array.from(involvedUserIds));
+    const { data: memberProfiles } = memberIds.length > 0
+        ? await supabaseAdmin.from('profiles').select('id, first_name, last_name, photos, bio, branch, year, domains, skills, open_to').in('id', memberIds)
+        : { data: [] };
+
+    const allProfiles = [...(creatorProfiles || []), ...(memberProfiles || [])];
 
     const profileMap = new Map(((allProfiles || []) as any[]).map((p: any) => [p.id, p]));
 
@@ -129,34 +135,23 @@ export async function GET(req: Request) {
     try {
         // --- MINE filter ---
         if (filter === 'mine') {
-            // Find team IDs where I am a member
-            const { data: memberRows, error: memberErr } = await supabaseAdmin
-                .from('team_members')
-                .select('team_id')
-                .eq('user_id', userId);
+            // PERF: Fetch my memberships and my created teams in PARALLEL.
+            const [{ data: memberRows, error: memberErr }, { data: owned, error: ownedErr }] = await Promise.all([
+                supabaseAdmin.from('team_members').select('team_id').eq('user_id', userId),
+                supabaseAdmin.from('teams').select('*').eq('creator_id', userId).order('created_at', { ascending: false }),
+            ]);
 
             if (memberErr) throw memberErr;
+            if (ownedErr) throw ownedErr;
 
             const memberTeamIds = (memberRows || []).map((r: any) => r.team_id);
 
-            // Fetch teams I created
-            const { data: owned, error: ownedErr } = await supabaseAdmin
-                .from('teams')
-                .select('*')
-                .eq('creator_id', userId)
-                .order('created_at', { ascending: false });
-
-            if (ownedErr) throw ownedErr;
-
-            // Fetch teams I joined (but didn't create)
+            // Fetch teams I joined (but didn't create) — only if there are any
             let memberTeams: any[] = [];
             if (memberTeamIds.length > 0) {
                 const { data: mt, error: mtErr } = await supabaseAdmin
-                    .from('teams')
-                    .select('*')
-                    .in('id', memberTeamIds)
+                    .from('teams').select('*').in('id', memberTeamIds)
                     .order('created_at', { ascending: false });
-
                 if (mtErr) throw mtErr;
                 memberTeams = mt || [];
             }
@@ -184,18 +179,11 @@ export async function GET(req: Request) {
             return NextResponse.json(await enrichTeams(data || []));
         }
 
-        // Exclude: teams I applied to (pending/accepted)
-        const { data: apps } = await supabaseAdmin
-            .from('team_applications')
-            .select('team_id')
-            .eq('applicant_id', userId)
-            .in('status', ['pending', 'accepted']);
-
-        // Exclude: teams I'm already a member of
-        const { data: myMemberships } = await supabaseAdmin
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', userId);
+        // PERF: Fetch applications and memberships in PARALLEL to build exclusion set.
+        const [{ data: apps }, { data: myMemberships }] = await Promise.all([
+            supabaseAdmin.from('team_applications').select('team_id').eq('applicant_id', userId).in('status', ['pending', 'accepted']),
+            supabaseAdmin.from('team_members').select('team_id').eq('user_id', userId),
+        ]);
 
         const excludedIds = Array.from(new Set([
             ...(apps || []).map((a: any) => a.team_id),

@@ -1,19 +1,89 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, memo, useCallback } from "react"
 import { useChat } from "@/context/ChatContext"
 import { Search } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+
+// PERF: Memoize each individual chat row so re-renders from typing indicators
+// (which update ChatContext) don't re-render the entire list.
+const ChatItem = memo(function ChatItem({
+    conv,
+    isSelected,
+    onSelect,
+}: {
+    conv: any
+    isSelected: boolean
+    onSelect: () => void
+}) {
+    return (
+        <div
+            onClick={onSelect}
+            className={`flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/30 transition-colors ${isSelected ? "bg-muted/50" : ""}`}
+        >
+            {/* Avatar */}
+            <div className="relative shrink-0">
+                <div className="h-14 w-14 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                    {conv.friendPhoto ? (
+                        <img src={conv.friendPhoto} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                        <div className={`h-full w-full flex items-center justify-center font-bold text-xl ${conv.type === 'group' ? 'bg-orange-500/10 text-orange-600' : 'bg-indigo-500/10 text-indigo-500'}`}>
+                            {conv.type === 'group' ? (
+                                <span className="text-2xl">👥</span>
+                            ) : (
+                                conv.friendName?.[0] || "?"
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-baseline mb-0.5">
+                    <h3 className="font-semibold text-base truncate">{conv.friendName}</h3>
+                    {conv.lastMessageAt && (
+                        <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false })
+                                    .replace("about ", "")
+                                    .replace(" minutes", "m")
+                                    .replace(" hours", "h")}
+                            </span>
+                            {conv.unreadCount && conv.unreadCount > 0 ? (
+                                <span className="bg-primary text-primary-foreground text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full flex items-center justify-center">
+                                    {conv.unreadCount}
+                                </span>
+                            ) : null}
+                        </div>
+                    )}
+                </div>
+                <p className={`text-sm truncate leading-snug ${!conv.lastMessage ? 'italic text-muted-foreground' : 'text-muted-foreground'}`}>
+                    {conv.lastMessage || "Start a conversation"}
+                </p>
+            </div>
+        </div>
+    )
+})
 
 export function ChatList({ onSelect }: { onSelect?: () => void }) {
     const { conversations, selectedConversationId, selectConversation, isLoading } = useChat()
     const [searchQuery, setSearchQuery] = useState("")
 
-    // Filter by name (works for both DMs and team names)
-    const filtered = conversations.filter((conv) =>
-        conv.friendName?.toLowerCase().includes(searchQuery.toLowerCase())
+    // PERF: Memoize the filtered list so it only recomputes when conversations or search changes.
+    // Without this, every typing indicator update re-runs this filter over the full list.
+    const filtered = useMemo(
+        () => conversations.filter((conv) =>
+            conv.friendName?.toLowerCase().includes(searchQuery.toLowerCase())
+        ),
+        [conversations, searchQuery]
     )
+
+    const handleSelect = useCallback((conv: any) => {
+        selectConversation(conv.id, conv.friendId, conv.type)
+        if (onSelect) onSelect()
+    }, [selectConversation, onSelect])
 
     if (isLoading) {
         return <div className="p-4 text-center text-muted-foreground text-sm">Loading chats...</div>
@@ -48,57 +118,12 @@ export function ChatList({ onSelect }: { onSelect?: () => void }) {
                     </div>
                 ) : (
                     filtered.map((conv) => (
-                        <div
+                        <ChatItem
                             key={conv.id}
-                            onClick={() => {
-                                selectConversation(conv.id, conv.friendId, conv.type)
-                                if (onSelect) onSelect()
-                            }}
-                            className={`flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/30 transition-colors ${selectedConversationId === conv.id ? "bg-muted/50" : ""
-                                }`}
-                        >
-                            {/* Avatar */}
-                            <div className="relative shrink-0">
-                                <div className="h-14 w-14 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                                    {conv.friendPhoto ? (
-                                        <img src={conv.friendPhoto} alt="" className="h-full w-full object-cover" />
-                                    ) : (
-                                        <div className={`h-full w-full flex items-center justify-center font-bold text-xl ${conv.type === 'group' ? 'bg-orange-500/10 text-orange-600' : 'bg-indigo-500/10 text-indigo-500'}`}>
-                                            {conv.type === 'group' ? (
-                                                <span className="text-2xl">👥</span>
-                                            ) : (
-                                                conv.friendName?.[0] || "?"
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Content */}
-                            <div className="flex-1 min-w-0">
-                                <div className="flex justify-between items-baseline mb-0.5">
-                                    <h3 className="font-semibold text-base truncate">{conv.friendName}</h3>
-                                    {conv.lastMessageAt && (
-                                        <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
-                                            <span className="text-xs text-muted-foreground">
-                                                {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false })
-                                                    .replace("about ", "")
-                                                    .replace(" minutes", "m")
-                                                    .replace(" hours", "h")}
-                                            </span>
-                                            {conv.unreadCount && conv.unreadCount > 0 ? (
-                                                <span className="bg-primary text-primary-foreground text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full flex items-center justify-center">
-                                                    {conv.unreadCount}
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    )}
-                                </div>
-                                <p className={`text-sm truncate leading-snug ${!conv.lastMessage ? 'italic text-muted-foreground' : 'text-muted-foreground'}`}>
-                                    {conv.lastMessage || "Start a conversation"}
-                                </p>
-                            </div>
-                        </div>
+                            conv={conv}
+                            isSelected={selectedConversationId === conv.id}
+                            onSelect={() => handleSelect(conv)}
+                        />
                     ))
                 )}
             </div>
