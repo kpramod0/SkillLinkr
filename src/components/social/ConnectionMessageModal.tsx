@@ -57,15 +57,15 @@ export function ConnectionMessageModal({ profile, onConfirm, onCancel }: Connect
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
         >
             <motion.div
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 100, opacity: 0 }}
-                transition={{ type: "spring", damping: 28, stiffness: 300 }}
-                className="w-full max-w-md bg-background rounded-t-3xl sm:rounded-2xl border border-border/50 shadow-2xl overflow-hidden"
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="w-full max-w-md bg-background rounded-2xl border border-border/50 shadow-2xl overflow-hidden"
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 pb-2">
@@ -108,8 +108,8 @@ export function ConnectionMessageModal({ profile, onConfirm, onCancel }: Connect
                             onClick={() => handleSelectPredefined(msg)}
                             disabled={sending}
                             className={`w-full text-left text-sm px-3.5 py-2.5 rounded-xl border transition-all duration-200 ${selectedMessage === msg && !isCustom
-                                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/30"
-                                    : "border-border/50 bg-muted/30 hover:bg-muted/60 text-foreground"
+                                ? "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/30"
+                                : "border-border/50 bg-muted/30 hover:bg-muted/60 text-foreground"
                                 }`}
                         >
                             {msg}
@@ -132,8 +132,8 @@ export function ConnectionMessageModal({ profile, onConfirm, onCancel }: Connect
                             disabled={sending}
                             rows={2}
                             className={`w-full text-sm px-3.5 py-2.5 rounded-xl border resize-none bg-muted/30 focus:outline-none transition-all duration-200 ${isCustom && customMessage.trim()
-                                    ? "border-emerald-500 ring-1 ring-emerald-500/30"
-                                    : "border-border/50 focus:border-border"
+                                ? "border-emerald-500 ring-1 ring-emerald-500/30"
+                                : "border-border/50 focus:border-border"
                                 }`}
                         />
                         {isCustom && (
